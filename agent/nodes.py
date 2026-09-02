@@ -101,23 +101,72 @@ Output ONLY the structured plan."""
     return {"plan": plan_result.tasks, "current_task_index": 0}
 
 
+# One worked example of the shape a generated module should take. Deliberately
+# in a domain the specification will never use, so it teaches structure —
+# typed result object, explicit exports — without seeding vocabulary.
+HOOK_EXAMPLE = """// Example of the expected shape only. Not part of the app being built.
+import { useQuery } from "@apollo/client";
+import { GET_ITEMS } from "@/graphql/queries";
+import type { Item } from "@/types";
+
+export interface UseItemsResult {
+  items: Item[];
+  loading: boolean;
+  error?: Error;
+}
+
+export function useItems(): UseItemsResult {
+  const { data, loading, error } = useQuery<{ items: Item[] }>(GET_ITEMS);
+  return { items: data?.items ?? [], loading, error };
+}
+"""
+
+
+def _render_generated_files(generated: dict[str, str]) -> str:
+    """Render every file written so far this run.
+
+    Injecting all of them is a deliberate simplification, not a general
+    solution: it is affordable because these apps are a dozen small files. A
+    larger spec would need the coder to select the files a task actually
+    depends on rather than reading the whole manifest every call.
+    """
+    if not generated:
+        return "Nothing has been generated yet; this is the first file."
+    return "\n\n".join(
+        f"--- File: {path} ---\n{content}" for path, content in generated.items()
+    )
+
+
 def coder_node(state: AgentState) -> dict:
     idx = state["current_task_index"]
     task = state["plan"][idx]
 
     existing_content = read_project_file(state["target_dir"], task.filepath)
+    generated = state["generated_files"]
 
     prompt = f"""You are generating application code for: {task.filepath}
-        Task Purpose: {task.description}
+Task purpose: {task.description}
 
-        Project Context & Types:
-        {state['boilerplate_context']}
+Pre-existing project context:
+{state['boilerplate_context']}
 
-        Existing file content (if any):
-        {existing_content}
+Files already generated during this run:
+{_render_generated_files(generated)}
 
-        Write the full, complete production code for this file. 
-        Return ONLY the raw code for the file without markdown code fences or conversational prose."""
+Existing content of the file you are writing (if any):
+{existing_content}
+
+{HOOK_EXAMPLE}
+
+Write the full, complete production code for this file.
+
+Import only symbols that actually exist. The files above are the real source of
+truth for what is importable: match each import to the way that file actually
+exports it — a default export must be imported as a default, a named export by
+name — and match prop and return types to the signatures those files declare.
+Do not import from a path that is not listed above.
+
+Return ONLY the raw code for the file, with no markdown code fences and no prose."""
 
     response = llm.invoke(
         [
@@ -140,6 +189,7 @@ def coder_node(state: AgentState) -> dict:
     return {
         "current_task_index": idx + 1,
         "total_tokens": state["total_tokens"] + tokens,
+        "generated_files": {**generated, task.filepath: clean_code},
     }
 
 

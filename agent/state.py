@@ -1,5 +1,5 @@
 import json
-from typing import Any, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 from pydantic import BaseModel, Field, field_validator
 
 class FileTask(BaseModel):
@@ -34,3 +34,6 @@ class AgentState(TypedDict):
     retries: int
     max_retries: int
     total_tokens: int
+    # filepath -> content for every file written so far this run, so each coder
+    # call can see the real exports of the files it is about to import from.
+    generated_files: Dict[str, str]

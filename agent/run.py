@@ -54,7 +54,8 @@ def main():
         "is_passing": False,
         "retries": 0,
         "max_retries": 3,
-        "total_tokens": 0
+        "total_tokens": 0,
+        "generated_files": {}
     }
 
     # Run state machine

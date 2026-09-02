@@ -69,18 +69,18 @@ The agent must work on any spec, not just the one it was developed against.
 
 ---
 
-## Stage 2 — Cross-file correctness · `TODO`
+## Stage 2 — Cross-file correctness · `DONE`
 
 Stop the coder from being blind to its own output.
 
 **Acceptance criteria**
 
-- [ ] `generated_files: dict[str, str]` added to `AgentState`, initialized in `run.py`
-- [ ] Manifest of prior generated files injected into the coder prompt on every call
-- [ ] `coder_node` returns the updated manifest alongside the incremented index
-- [ ] One short few-shot example in the coder prompt showing the expected shape of a
+- [x] `generated_files: dict[str, str]` added to `AgentState`, initialized in `run.py`
+- [x] Manifest of prior generated files injected into the coder prompt on every call
+- [x] `coder_node` returns the updated manifest alongside the incremented index
+- [x] One short few-shot example in the coder prompt showing the expected shape of a
       custom hook
-- [ ] A generated component's imports match the actual exports of the hook it imports
+- [x] A generated component's imports match the actual exports of the hook it imports
 
 **Commit:** `feat(coder): add generated-file manifest and few-shot example for cross-file context`
 
