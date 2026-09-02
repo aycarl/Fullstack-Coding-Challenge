@@ -146,11 +146,10 @@ Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 - **Cost is not measurable.** `run.py` accumulates a single `total_tokens` figure and
   never prints it. At $5 in / $25 out per 1M, a combined total cannot produce a cost
   estimate; input and output must be tracked separately. → Stage 4
-- **Generated tests are the weak point.** The application source of a full run typechecks
-  clean and the dev server serves it, but the generated tests import symbols the
-  components do not export (`import { CarFilters }` against a default export) and assume
-  prop signatures that do not match. Tests are written last, against components the coder
-  can no longer see. → Stage 2
+- **The coder ignores the `lib` target it is shown.** `tsconfig.json` is in context and
+  declares `"lib": ["ES2020"]`, yet three consecutive runs reached for `Array.prototype.at`
+  (ES2022). The type error names the fix in its own text, so it is a good test of whether
+  the fixer works at all. → Stage 3
 - **No token or cost figures yet**, and no sample generated output is committed. → Stage 4
 - **No cross-file consistency pass after generation.** Files are written one at a time and
   never reconciled as a set. This holds for this app because dependencies flow one
@@ -167,4 +166,6 @@ Token counts are `TBD` until `run.py` reports them (Stage 4); outcomes are recor
 
 | Date | Spec | Tasks | Input | Output | Cost | Result |
 |---|---|---|---|---|---|---|
-| 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Completed. 10 files created, `App.tsx` modified, no boilerplate touched. App source typechecks clean, dev server returns 200. Validation fails on generated tests; fixer made no edits. |
+| 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Run 5, pre-manifest. 10 files created, no boilerplate touched. App source clean, dev server 200. Tests fail on guessed imports. |
+| 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Run 6, with manifest. 18/21 tests pass. Cross-file import errors gone; 4 single-file type errors remain. |
+| 2026-09-02 | `spec.txt` | 13 | `TBD` | `TBD` | `TBD` | Run 7, reference files added. **36/38 tests pass, 1 type error.** Fixer still made no edits. |
