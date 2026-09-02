@@ -55,7 +55,9 @@ def main():
         "retries": 0,
         "max_retries": 3,
         "total_tokens": 0,
-        "generated_files": {}
+        "generated_files": {},
+        "installed": False,
+        "last_patched_file": None
     }
 
     # Run state machine

@@ -23,6 +23,15 @@ class AgentPlan(BaseModel):
             return json.loads(value)
         return value
 
+class FixResult(BaseModel):
+    filepath: str = Field(
+        description="Relative path of the single file to rewrite, e.g. src/components/Foo.tsx"
+    )
+    corrected_content: str = Field(
+        description="Complete corrected contents of that file, with no markdown fences"
+    )
+
+
 class AgentState(TypedDict):
     spec: str
     target_dir: str
@@ -34,6 +43,10 @@ class AgentState(TypedDict):
     retries: int
     max_retries: int
     total_tokens: int
+    # npm install succeeded once; the retry loop must not repeat it every cycle.
+    installed: bool
+    # Path the fixer rewrote on the last cycle, or None if it could not act.
+    last_patched_file: Optional[str]
     # filepath -> content for every file written so far this run, so each coder
     # call can see the real exports of the files it is about to import from.
     generated_files: Dict[str, str]

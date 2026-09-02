@@ -105,6 +105,16 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
   (`cd agent && uv run run.py`), so `--boilerplate` defaults to `..` rather than `.`. A
   literal `.` would only be correct when running from the repo root, which would in turn
   break the `--spec spec.txt` default.
+- **The fixer uses structured output, like the planner** — it previously hand-parsed
+  `FILE:` / `<code>` markers out of free text, which was not merely fragile but inert:
+  under adaptive thinking `response.content` is a list of blocks, so the `"FILE:" in text`
+  guard was always false and the fixer silently wrote nothing on every retry of every run.
+- **The fixer is given the files the validator named**, found by regexing `src/...` paths
+  out of the raw output and reading them, capped at six. It diagnoses from real source
+  rather than inferring a filename from an error string.
+- **The fixer's chosen path is treated as untrusted** — it is the one place the model
+  picks a write target, so `resolve_project_path` rejects anything resolving outside the
+  output directory.
 - **The coder sees every file it has already written** — carried in state as
   `generated_files` and injected into each prompt, so a file's imports are checked against
   the real exports of its dependencies rather than guessed. Tests are planned last, which
@@ -137,12 +147,6 @@ Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
   larger spec would need the coder to select the files a task actually depends on rather
   than reading the whole manifest each time. Not scheduled — the limit is documented
   rather than engineered around.
-- **The validator never runs `npm install`.** A freshly copied output directory has no
-  `node_modules`, so the first validation fails for the wrong reason. → Stage 3
-- **The fixer hand-parses `FILE:` / `<code>` markers** from free text — fragile, and
-  inconsistent with the planner, which already uses structured output. → Stage 3
-- **The fixer has no error localization.** It infers the broken file from raw error text
-  instead of reading the paths out of the validator output and loading those files. → Stage 3
 - **Cost is not measurable.** `run.py` accumulates a single `total_tokens` figure and
   never prints it. At $5 in / $25 out per 1M, a combined total cannot produce a cost
   estimate; input and output must be tracked separately. → Stage 4

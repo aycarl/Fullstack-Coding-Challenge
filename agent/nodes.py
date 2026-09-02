@@ -1,9 +1,17 @@
 from pathlib import Path
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
+import re
+
 from config import MODEL_ID
-from state import AgentState, AgentPlan
-from tools import write_project_file, read_project_file, run_validation_suite
+from state import AgentState, AgentPlan, FixResult
+from tools import (
+    read_project_file,
+    resolve_project_path,
+    run_npm_install,
+    run_validation_suite,
+    write_project_file,
+)
 
 llm = ChatAnthropic(model_name=MODEL_ID)
 
@@ -200,27 +208,79 @@ Return ONLY the raw code for the file, with no markdown code fences and no prose
 
 
 def validator_node(state: AgentState) -> dict:
+    # A freshly copied output tree has no node_modules. Install once, then let
+    # the retry loop reuse it rather than reinstalling on every cycle.
+    if not state["installed"]:
+        installed, output = run_npm_install(state["target_dir"])
+        if not installed:
+            return {
+                "is_passing": False,
+                "validation_output": output,
+                "retries": state["retries"] + 1,
+                "installed": False,
+            }
+
     passed, output = run_validation_suite(state["target_dir"])
     return {
         "is_passing": passed,
         "validation_output": output,
         "retries": state["retries"] + (0 if passed else 1),
+        "installed": True,
     }
 
 
+# Paths as tsc and vitest report them, e.g. "src/components/CarCard.tsx(9,57)".
+ERROR_PATH_RE = re.compile(r"((?:src|tests)/[\w./-]+\.(?:tsx?|jsx?))")
+
+# Bound on how many implicated files to open, so a cascade of errors across the
+# whole tree cannot blow up the prompt.
+MAX_IMPLICATED_FILES = 6
+
+
+def _implicated_files(validation_output: str, target_dir: str) -> dict[str, str]:
+    """Read the files the validator actually named, in order of first mention."""
+    found: dict[str, str] = {}
+    for rel_path in ERROR_PATH_RE.findall(validation_output):
+        if rel_path in found or len(found) >= MAX_IMPLICATED_FILES:
+            continue
+        content = read_project_file(target_dir, rel_path)
+        if not content.startswith("File not found:"):
+            found[rel_path] = content
+    return found
+
+
 def fixer_node(state: AgentState) -> dict:
-    prompt = f"""The application build or tests failed with errors:
-        {state['validation_output']}
+    target_dir = state["target_dir"]
+    implicated = _implicated_files(state["validation_output"], target_dir)
 
-        Review the error carefully. Identify which file caused this issue, generate the entire corrected file content, 
-        and format your response as:
-        FILE: <relative_path>
-        <code>
-        <full file contents>
-        </code>
-    """
+    if implicated:
+        files_block = "\n\n".join(
+            f"--- File: {path} ---\n{content}" for path, content in implicated.items()
+        )
+        scope = (
+            "Rewrite exactly one of the files listed above. Its `filepath` must be "
+            "one of: " + ", ".join(implicated)
+        )
+    else:
+        files_block = "No source file could be identified from the error output."
+        scope = "Name the relative path of the file that must change."
 
-    response = llm.invoke(
+    structured_llm = llm.with_structured_output(FixResult, method="json_schema")
+    prompt = f"""Validation of the generated project failed.
+
+Validator output:
+{state['validation_output']}
+
+Current contents of the files named in that output:
+{files_block}
+
+Diagnose the root cause and return the complete corrected contents of the single
+file that needs to change. {scope}
+
+Preserve everything that is already correct — return the whole file, not a
+fragment, and do not rewrite working code beyond what the error requires."""
+
+    result = structured_llm.invoke(
         [
             SystemMessage(
                 content="You fix TypeScript and Vitest errors with precision."
@@ -229,14 +289,14 @@ def fixer_node(state: AgentState) -> dict:
         ]
     )
 
-    text = response.content
-    if "FILE:" in text and "<code>" in text:
-        header, code_block = text.split("<code>", 1)
-        filepath = header.split("FILE:")[1].strip()
-        code = code_block.split("</code>")[0].strip()
-        write_project_file(state["target_dir"], filepath, code)
+    # The model chooses this path, so treat it as untrusted before writing.
+    if resolve_project_path(target_dir, result.filepath) is not None:
+        write_project_file(target_dir, result.filepath, result.corrected_content)
+        patched = result.filepath
+    else:
+        patched = None
 
-    tokens = (
-        response.usage_metadata.get("total_tokens", 0) if response.usage_metadata else 0
-    )
-    return {"total_tokens": state["total_tokens"] + tokens}
+    return {
+        "total_tokens": state["total_tokens"],
+        "last_patched_file": patched,
+    }

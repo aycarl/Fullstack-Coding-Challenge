@@ -86,20 +86,20 @@ Stop the coder from being blind to its own output.
 
 ---
 
-## Stage 3 — Validation and self-healing · `TODO`
+## Stage 3 — Validation and self-healing · `DONE`
 
 Make the retry loop actually work.
 
 **Acceptance criteria**
 
-- [ ] `run_npm_install(target_dir)` added to `tools.py`, called from `validator_node`
+- [x] `run_npm_install(target_dir)` added to `tools.py`, called from `validator_node`
       before typecheck and tests
-- [ ] Success cached via an `installed: bool` flag in state so retries don't reinstall
-- [ ] `FixResult` Pydantic model (`filepath`, `corrected_content`); `fixer_node` uses
+- [x] Success cached via an `installed: bool` flag in state so retries don't reinstall
+- [x] `FixResult` Pydantic model (`filepath`, `corrected_content`); `fixer_node` uses
       `with_structured_output` instead of hand-splitting on markers
-- [ ] Failure localized before fixing — `src/...` paths regexed out of validator
+- [x] Failure localized before fixing — `src/...` paths regexed out of validator
       stdout/stderr, those files read, their content passed to the fixer
-- [ ] With a file deliberately broken: validator fails on real npm output, and the fixer
+- [x] With a file deliberately broken: validator fails on real npm output, and the fixer
       targets the correct path rather than guessing
 
 **Commit:** `feat(validator): install deps before checks; add structured fixer with error localization`
