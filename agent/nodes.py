@@ -23,6 +23,12 @@ CONTRACT_FILES = [
     "src/test-setup.ts",
     "src/main.tsx",
     "src/App.tsx",
+    # Shipped by the boilerplate as worked references for how to use Apollo with
+    # MUI, and how to test a component without going near the network. Without
+    # them the coder invents its own test harness: one run stood up a real
+    # ApolloClient over jsdom fetch and failed on an AbortSignal mismatch.
+    "src/components/Example.tsx",
+    "src/__tests__/Example.test.tsx",
 ]
 
 # Never part of the boilerplate contract, and expensive to walk.
