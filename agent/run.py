@@ -13,7 +13,7 @@ from graph import build_graph
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Frontend Code Generator")
     parser.add_argument("--spec", default="spec.txt", help="Path to input text spec")
-    parser.add_argument("--boilerplate", default="../boilerplate", help="Path to starter boilerplate")
+    parser.add_argument("--boilerplate", default="..", help="Path to starter boilerplate")
     parser.add_argument("--output", default="./generated-app", help="Output directory")
     args = parser.parse_args()
 

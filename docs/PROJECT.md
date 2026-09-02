@@ -101,6 +101,10 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
   `npm run test`) rather than reimplementing checks — the agent is held to the same bar a
   human contributor would be.
 - **Retry limit of 3** — bounded so a pathological failure can't burn tokens indefinitely.
+- **CLI paths default relative to `agent/`** — that is the documented working directory
+  (`cd agent && uv run run.py`), so `--boilerplate` defaults to `..` rather than `.`. A
+  literal `.` would only be correct when running from the repo root, which would in turn
+  break the `--spec spec.txt` default.
 - **Model choice rationale:** `TBD` (Stage 5).
 
 ---

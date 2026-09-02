@@ -29,7 +29,7 @@ The skeleton exists and is wired. Every stage below modifies it; none recreates 
 
 ---
 
-## Stage 0 — Baseline and doc bootstrap · `IN PROGRESS`
+## Stage 0 — Baseline and doc bootstrap · `DONE`
 
 Prove the baseline is clean, create the working docs, clear dead weight.
 
@@ -39,9 +39,10 @@ Prove the baseline is clean, create the working docs, clear dead weight.
       (2 tests pass; `tsc --noEmit` clean)
 - [x] `docs/PROJECT.md` exists, populated only from facts observable in the repo
 - [x] `docs/TICKETS.md` exists — this board, with status traceable to git log or source
-- [ ] `agent/main.py` deleted (unused `uv init` stub printing "Hello from agent!")
-- [ ] `agent/README.md` written — what the agent is, plus the `uv run` command
-- [ ] `run.py --boilerplate` default corrected from `../boilerplate` (does not exist) to `.`
+- [x] `agent/main.py` deleted (unused `uv init` stub printing "Hello from agent!")
+- [x] `agent/README.md` written — what the agent is, plus the `uv run` command
+- [x] `run.py --boilerplate` default corrected from `../boilerplate` (does not exist)
+      to `..` — the repo root, relative to `agent/`, which is where the CLI is run from
 
 **Commits:** `docs: add PROJECT.md and TICKETS.md` · `chore: remove unused stub, document agent, fix boilerplate path default`
 
