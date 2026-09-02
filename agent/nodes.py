@@ -24,7 +24,7 @@ def inspector_node(state: AgentState) -> dict:
 
 
 def planner_node(state: AgentState) -> dict:
-    structured_llm = llm.with_structured_output(AgentPlan)
+    structured_llm = llm.with_structured_output(AgentPlan, method="json_schema")
     prompt = f"""You are a principal frontend architect planning an implementation.
 
 Boilerplate the generated code must fit into:

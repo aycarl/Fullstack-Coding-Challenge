@@ -1,5 +1,6 @@
-from typing import List, Optional, TypedDict
-from pydantic import BaseModel, Field
+import json
+from typing import Any, List, Optional, TypedDict
+from pydantic import BaseModel, Field, field_validator
 
 class FileTask(BaseModel):
     filepath: str = Field(description="Relative path to file")
@@ -8,6 +9,19 @@ class FileTask(BaseModel):
 
 class AgentPlan(BaseModel):
     tasks: List[FileTask] = Field(description="Ordered list of implementation tasks")
+
+    @field_validator("tasks", mode="before")
+    @classmethod
+    def _accept_json_string(cls, value: Any) -> Any:
+        """Tolerate the model serializing the task array as a JSON string.
+
+        Observed once in three planner calls before the planner moved to
+        json_schema structured output. Cheap insurance: a hard ValidationError
+        here loses the whole run.
+        """
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
 
 class AgentState(TypedDict):
     spec: str
