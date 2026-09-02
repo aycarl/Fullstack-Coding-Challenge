@@ -8,6 +8,7 @@ load_dotenv()
 from rich.console import Console
 console = Console()
 
+from config import MODEL_ID, estimate_cost
 from graph import build_graph
 
 def main():
@@ -54,26 +55,47 @@ def main():
         "is_passing": False,
         "retries": 0,
         "max_retries": 3,
-        "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
         "generated_files": {},
         "installed": False,
         "last_patched_file": None
     }
 
-    # Run state machine
+    # Run state machine. Nodes return running totals, so the last value seen for
+    # each is the total for the run.
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    passing = False
+
     for event in app.stream(initial_state):
         for node_name, state_update in event.items():
+            for key in usage:
+                if key in state_update:
+                    usage[key] = state_update[key]
+
             if node_name == "planner":
                 console.print(f"[cyan][Plan Created][/cyan] {len(state_update['plan'])} tasks defined.")
             elif node_name == "coder":
                 console.print(f"[yellow][Code Gen][/yellow] Completed task {state_update['current_task_index']}")
             elif node_name == "validator":
-                status = "[green]PASSED[/green]" if state_update["is_passing"] else "[red]FAILED[/red]"
+                passing = state_update["is_passing"]
+                status = "[green]PASSED[/green]" if passing else "[red]FAILED[/red]"
                 console.print(f"[magenta][Validation][/magenta] Typecheck & Tests: {status}")
             elif node_name == "fixer":
-                console.print("[red][Fixer][/red] Attempting self-healing patch...")
+                target = state_update.get("last_patched_file")
+                detail = f"patched [bold]{target}[/bold]" if target else "[red]no file patched[/red]"
+                console.print(f"[red][Fixer][/red] Self-healing: {detail}")
 
     console.rule("[bold green]Execution Complete[/bold green]")
+
+    cost = estimate_cost(usage["input_tokens"], usage["output_tokens"])
+    console.print(f"Validation: {'[green]passing[/green]' if passing else '[red]failing[/red]'}")
+    console.print(
+        f"Tokens ({MODEL_ID}): "
+        f"[bold]{usage['input_tokens']:,}[/bold] in, "
+        f"[bold]{usage['output_tokens']:,}[/bold] out"
+    )
+    console.print(f"Estimated cost: [bold]${cost:.2f}[/bold]")
     console.print(f"Run output located at: [bold]{args.output}[/bold]")
     console.print("To run the generated app:")
     console.print(f"  cd {args.output} && npm install && npm run dev")

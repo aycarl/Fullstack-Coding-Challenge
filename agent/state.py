@@ -42,7 +42,8 @@ class AgentState(TypedDict):
     is_passing: bool
     retries: int
     max_retries: int
-    total_tokens: int
+    input_tokens: int
+    output_tokens: int
     # npm install succeeded once; the retry loop must not repeat it every cycle.
     installed: bool
     # Path the fixer rewrote on the last cycle, or None if it could not act.

@@ -43,6 +43,15 @@ CONTRACT_FILES = [
 IGNORED_DIRS = {"node_modules", ".git", "dist", ".vite", "coverage", "docs"}
 
 
+def _usage(message) -> tuple[int, int]:
+    """Input and output tokens for one call, counted separately.
+
+    The two are priced differently, so a combined total cannot be costed.
+    """
+    meta = getattr(message, "usage_metadata", None) or {}
+    return meta.get("input_tokens", 0), meta.get("output_tokens", 0)
+
+
 def inspector_node(state: AgentState) -> dict:
     target = Path(state["target_dir"])
 
@@ -75,7 +84,9 @@ def inspector_node(state: AgentState) -> dict:
 
 
 def planner_node(state: AgentState) -> dict:
-    structured_llm = llm.with_structured_output(AgentPlan, method="json_schema")
+    structured_llm = llm.with_structured_output(
+        AgentPlan, method="json_schema", include_raw=True
+    )
     prompt = f"""You are a principal frontend architect planning an implementation.
 
 Boilerplate the generated code must fit into:
@@ -111,8 +122,18 @@ specification changes the behaviour they cover.
 
 Output ONLY the structured plan."""
 
-    plan_result = structured_llm.invoke([HumanMessage(content=prompt)])
-    return {"plan": plan_result.tasks, "current_task_index": 0}
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    plan_result = result["parsed"]
+    if plan_result is None:
+        raise RuntimeError(f"planner returned no usable plan: {result['parsing_error']}")
+
+    in_tok, out_tok = _usage(result["raw"])
+    return {
+        "plan": plan_result.tasks,
+        "current_task_index": 0,
+        "input_tokens": state["input_tokens"] + in_tok,
+        "output_tokens": state["output_tokens"] + out_tok,
+    }
 
 
 # One worked example of the shape a generated module should take. Deliberately
@@ -197,12 +218,11 @@ Return ONLY the raw code for the file, with no markdown code fences and no prose
 
     write_project_file(state["target_dir"], task.filepath, clean_code)
 
-    tokens = (
-        response.usage_metadata.get("total_tokens", 0) if response.usage_metadata else 0
-    )
+    in_tok, out_tok = _usage(response)
     return {
         "current_task_index": idx + 1,
-        "total_tokens": state["total_tokens"] + tokens,
+        "input_tokens": state["input_tokens"] + in_tok,
+        "output_tokens": state["output_tokens"] + out_tok,
         "generated_files": {**generated, task.filepath: clean_code},
     }
 
@@ -265,7 +285,9 @@ def fixer_node(state: AgentState) -> dict:
         files_block = "No source file could be identified from the error output."
         scope = "Name the relative path of the file that must change."
 
-    structured_llm = llm.with_structured_output(FixResult, method="json_schema")
+    structured_llm = llm.with_structured_output(
+        FixResult, method="json_schema", include_raw=True
+    )
     prompt = f"""Validation of the generated project failed.
 
 Validator output:
@@ -280,7 +302,7 @@ file that needs to change. {scope}
 Preserve everything that is already correct — return the whole file, not a
 fragment, and do not rewrite working code beyond what the error requires."""
 
-    result = structured_llm.invoke(
+    raw_result = structured_llm.invoke(
         [
             SystemMessage(
                 content="You fix TypeScript and Vitest errors with precision."
@@ -288,15 +310,17 @@ fragment, and do not rewrite working code beyond what the error requires."""
             HumanMessage(content=prompt),
         ]
     )
+    fix = raw_result["parsed"]
+    in_tok, out_tok = _usage(raw_result["raw"])
 
     # The model chooses this path, so treat it as untrusted before writing.
-    if resolve_project_path(target_dir, result.filepath) is not None:
-        write_project_file(target_dir, result.filepath, result.corrected_content)
-        patched = result.filepath
-    else:
-        patched = None
+    patched = None
+    if fix is not None and resolve_project_path(target_dir, fix.filepath) is not None:
+        write_project_file(target_dir, fix.filepath, fix.corrected_content)
+        patched = fix.filepath
 
     return {
-        "total_tokens": state["total_tokens"],
+        "input_tokens": state["input_tokens"] + in_tok,
+        "output_tokens": state["output_tokens"] + out_tok,
         "last_patched_file": patched,
     }
