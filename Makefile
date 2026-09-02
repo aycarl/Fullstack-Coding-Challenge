@@ -17,8 +17,18 @@ help: ## List available targets
 generate: ## Run the agent to scaffold the app from SPEC (replaces previous output)
 	cd $(AGENT) && rm -rf generated-app && uv run run.py --spec $(SPEC) --output ./generated-app
 
-test: ## Typecheck and test the generated app
+test: $(OUT)/node_modules ## Typecheck and test the generated app
 	cd $(OUT) && npm run typecheck && npm run test
 
-dev: ## Serve the generated app at localhost:5173
+dev: $(OUT)/node_modules ## Serve the generated app at localhost:5173
 	cd $(OUT) && npm run dev
+
+# Install from the lockfile whenever node_modules is missing or older than it, so
+# test and dev both work against a freshly generated tree. Expressed as a real
+# dependency rather than an unconditional `npm ci` in each recipe: same clean-slate
+# guarantee, without reinstalling on every invocation.
+$(OUT)/node_modules: $(OUT)/package-lock.json
+	cd $(OUT) && npm ci
+
+$(OUT)/package-lock.json:
+	@echo "No generated app at $(OUT) — run 'make generate' first."; exit 1
