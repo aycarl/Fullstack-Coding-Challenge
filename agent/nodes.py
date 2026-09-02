@@ -8,12 +8,49 @@ from tools import write_project_file, read_project_file, run_validation_suite
 llm = ChatAnthropic(model_name=MODEL_ID)
 
 
+# Files whose full contents the planner and coder need in order to honour the
+# boilerplate's contracts: the data shape, the API surface, the build and test
+# config, and the entry points they must integrate with.
+CONTRACT_FILES = [
+    "package.json",
+    "tsconfig.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "src/types.ts",
+    "src/graphql/client.ts",
+    "src/graphql/queries.ts",
+    "src/mocks/handlers.ts",
+    "src/test-setup.ts",
+    "src/main.tsx",
+    "src/App.tsx",
+]
+
+# Never part of the boilerplate contract, and expensive to walk.
+IGNORED_DIRS = {"node_modules", ".git", "dist", ".vite", "coverage", "docs"}
+
+
 def inspector_node(state: AgentState) -> dict:
     target = Path(state["target_dir"])
-    key_files = ["package.json", "src/types.ts", "src/mocks/handlers.ts", "src/App.tsx"]
-    context_chunks = []
 
-    for rel_path in key_files:
+    manifest = []
+    for path in sorted(target.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(target)
+        if any(part in IGNORED_DIRS for part in rel.parts):
+            continue
+        manifest.append(str(rel))
+
+    context_chunks = [
+        "The project below already exists and is fully wired. Every path in this "
+        "manifest is present before generation starts: reuse these files and the "
+        "symbols they already export instead of recreating equivalents at new "
+        "paths, and do not rewrite the build, mocking or entry-point wiring "
+        "unless the specification actually requires a change to it.",
+        "--- Existing files ---\n" + "\n".join(manifest),
+    ]
+
+    for rel_path in CONTRACT_FILES:
         f = target / rel_path
         if f.exists():
             context_chunks.append(
@@ -50,6 +87,13 @@ aliases and conventions, and prefer extending an existing file over creating a
 parallel one beside it. In each task description, state the exported API of that
 file — the names and signatures other files will import — so that later tasks can
 depend on it correctly.
+
+Emit a task only for a file you will substantively change. Every task rewrites the
+file it names in full, so a task that concludes "leave this as-is" destroys working
+code. If an existing file already satisfies the specification, leave it out of the
+plan entirely — never add a task to verify, confirm or re-check one. For the same
+reason, leave existing passing tests and example files alone unless the
+specification changes the behaviour they cover.
 
 Output ONLY the structured plan."""
 

@@ -105,6 +105,15 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
   (`cd agent && uv run run.py`), so `--boilerplate` defaults to `..` rather than `.`. A
   literal `.` would only be correct when running from the repo root, which would in turn
   break the `--spec spec.txt` default.
+- **The inspector passes a full path manifest, not just a few files** — the planner
+  cannot reuse what it cannot see. Contents are sent for the contract files (data shape,
+  API surface, build/test config, entry points); everything else is listed by path. About
+  2.6K tokens, repeated into every coder call, and worth it: it cut a 22-task plan that
+  rebuilt the Apollo client, MSW mocks and Vite config down to 13 tasks that touch no
+  boilerplate at all.
+- **The planner may not emit no-op tasks** — the coder rewrites in full whatever file a
+  task names, so a task concluding "leave this as-is" destroys working wiring. Files that
+  already satisfy the spec are left out of the plan entirely.
 - **One model constant, env-overridable** — `config.MODEL_ID` reads `ANTHROPIC_MODEL`
   and defaults to `claude-opus-5`, so the whole pipeline can be pointed at a cheaper
   model for a smoke run without editing node code.
@@ -116,12 +125,6 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
 
 Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 
-- **The inspector shows the planner only four boilerplate files** (`package.json`,
-  `src/types.ts`, `src/mocks/handlers.ts`, `src/App.tsx`). It cannot see
-  `src/graphql/client.ts`, `src/graphql/queries.ts` or `src/test-setup.ts`, so a plan can
-  propose a parallel file beside one that already exists — observed in the Stage 1
-  verification, which planned `src/apollo/client.ts` and `src/test/setup.ts`. Not yet
-  scheduled.
 - **The coder is blind to its own prior output.** Each file is generated in isolation, so
   a component cannot know what the hook it imports actually exports. → Stage 2
 - **The validator never runs `npm install`.** A freshly copied output directory has no
