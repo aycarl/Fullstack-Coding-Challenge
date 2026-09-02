@@ -48,21 +48,21 @@ Prove the baseline is clean, create the working docs, clear dead weight.
 
 ---
 
-## Stage 1 — Make the planner spec-driven · `TODO`
+## Stage 1 — Make the planner spec-driven · `DONE`
 
 The agent must work on any spec, not just the one it was developed against.
 
 **Acceptance criteria**
 
-- [ ] Planner prompt carries **structural** guidance only — data/schema first, then hooks,
+- [x] Planner prompt carries **structural** guidance only — data/schema first, then hooks,
       then UI components, then entry-point integration, then tests. No domain nouns.
-- [ ] `agent/spec.txt` expanded to product-owner prose covering the full reference app
+- [x] `agent/spec.txt` expanded to product-owner prose covering the full reference app
       (list via GraphQL, responsive images at ≤640 / 641–1023 / ≥1024, MUI cards, Add Car
       mutation form, search by model, sort by year and make, `useCars()` hook, unit tests).
       Written as prose, **not** as a pre-decomposed task list.
-- [ ] Model ID moved to a config constant read from env (`ANTHROPIC_MODEL`, default
+- [x] Model ID moved to a config constant read from env (`ANTHROPIC_MODEL`, default
       `claude-opus-5`)
-- [ ] Planner run against a throwaway unrelated spec produces a substantively different
+- [x] Planner run against a throwaway unrelated spec produces a substantively different
       plan, and neither plan mentions cars unless its spec does
 
 **Commit:** `feat(planner): make planning fully spec-driven, expand sample spec`

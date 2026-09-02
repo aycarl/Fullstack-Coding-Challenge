@@ -27,3 +27,6 @@ venv/
 # --- OS / editor cruft ---
 *.local
 .DS_Store
+
+# Agent output (a sample run is committed deliberately at Stage 4)
+agent/generated-app/

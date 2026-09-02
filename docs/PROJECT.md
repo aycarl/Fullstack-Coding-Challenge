@@ -105,6 +105,9 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
   (`cd agent && uv run run.py`), so `--boilerplate` defaults to `..` rather than `.`. A
   literal `.` would only be correct when running from the repo root, which would in turn
   break the `--spec spec.txt` default.
+- **One model constant, env-overridable** — `config.MODEL_ID` reads `ANTHROPIC_MODEL`
+  and defaults to `claude-opus-5`, so the whole pipeline can be pointed at a cheaper
+  model for a smoke run without editing node code.
 - **Model choice rationale:** `TBD` (Stage 5).
 
 ---
@@ -113,12 +116,12 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
 
 Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 
-- **The planner prompt is spec-specific.** It names "Car Inventory Manager" and hardcodes
-  car-shaped task ordering, so a different spec would be planned against the wrong
-  structure. This is the failure mode the whole design exists to avoid. → Stage 1
-- **`spec.txt` is one line.** Too thin to drive generation, and it is the worked example
-  of what a usable input looks like. → Stage 1
-- **The model ID is hardcoded** in `nodes.py` rather than read from config. → Stage 1
+- **The inspector shows the planner only four boilerplate files** (`package.json`,
+  `src/types.ts`, `src/mocks/handlers.ts`, `src/App.tsx`). It cannot see
+  `src/graphql/client.ts`, `src/graphql/queries.ts` or `src/test-setup.ts`, so a plan can
+  propose a parallel file beside one that already exists — observed in the Stage 1
+  verification, which planned `src/apollo/client.ts` and `src/test/setup.ts`. Not yet
+  scheduled.
 - **The coder is blind to its own prior output.** Each file is generated in isolation, so
   a component cannot know what the hook it imports actually exports. → Stage 2
 - **The validator never runs `npm install`.** A freshly copied output directory has no

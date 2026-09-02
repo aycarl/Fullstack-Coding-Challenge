@@ -1,1 +1,28 @@
-Create a working Car Inventory Manager
+Car Inventory Manager
+
+We need a single-page web app that lets someone browse the cars we have in stock
+and add new ones as they arrive.
+
+The main screen is a gallery of the current inventory, loaded from our GraphQL
+API. Each car appears as a card showing its photo, make, model, year and color.
+Photos come back from the API at three sizes, and the app should display
+whichever one suits the viewport: the mobile image at 640px wide and below, the
+tablet image between 641px and 1023px, and the desktop image at 1024px and
+above. Lay the cards out with our Material UI component library so this app
+looks like the rest of our products.
+
+Anyone browsing a large inventory needs to narrow it down. Give them a search
+box that filters the list by model as they type, and a way to sort what they see
+by year or by make.
+
+Salespeople also need to add a car that has just landed on the lot. Give them a
+form that captures make, model, year and color and submits it to the API as a
+mutation. Once it succeeds, the new car should show up in the gallery without a
+page reload.
+
+All of the GraphQL data fetching for the inventory should sit behind a single
+custom React hook rather than being spread across the components, so the UI
+stays presentational and the data logic can be tested on its own.
+
+Please cover the important pieces with unit tests — at minimum the hook and the
+components a person actually interacts with.

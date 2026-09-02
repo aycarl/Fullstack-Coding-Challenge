@@ -1,10 +1,11 @@
 from pathlib import Path
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
+from config import MODEL_ID
 from state import AgentState, AgentPlan
 from tools import write_project_file, read_project_file, run_validation_suite
 
-llm = ChatAnthropic(model_name="claude-opus-5")
+llm = ChatAnthropic(model_name=MODEL_ID)
 
 
 def inspector_node(state: AgentState) -> dict:
@@ -24,22 +25,33 @@ def inspector_node(state: AgentState) -> dict:
 
 def planner_node(state: AgentState) -> dict:
     structured_llm = llm.with_structured_output(AgentPlan)
-    prompt = f"""You are a Principal Frontend Architect.
-        Boilerplate Context:
-        {state['boilerplate_context']}
+    prompt = f"""You are a principal frontend architect planning an implementation.
 
-        Product Specification:
-        {state['spec']}
+Boilerplate the generated code must fit into:
+{state['boilerplate_context']}
 
-        Break this specification into ordered, sequential file-level tasks to implement a Car Inventory Manager.
-        Order them logically:
-        1. GraphQL query definition
-        2. Custom data hook (useCars)
-        3. UI components (filters, card, list)
-        4. Integration into App.tsx
-        5. Vitest test files
+Product specification:
+{state['spec']}
 
-        Output ONLY the structured plan."""
+Decompose this specification into an ordered list of file-level tasks. Every
+requirement stated in the specification must be covered by at least one task,
+and no task may introduce a requirement the specification does not state.
+
+Order the tasks so that a file is always written after everything it depends on:
+
+1. Data and schema definitions — types, API queries and mutations
+2. Hooks and other logic that consume those definitions
+3. Presentational components, leaf components before the components that compose them
+4. Integration into the application entry point
+5. Tests for the units above
+
+Each task covers exactly one file. Reuse the boilerplate's existing paths, import
+aliases and conventions, and prefer extending an existing file over creating a
+parallel one beside it. In each task description, state the exported API of that
+file — the names and signatures other files will import — so that later tasks can
+depend on it correctly.
+
+Output ONLY the structured plan."""
 
     plan_result = structured_llm.invoke([HumanMessage(content=prompt)])
     return {"plan": plan_result.tasks, "current_task_index": 0}
