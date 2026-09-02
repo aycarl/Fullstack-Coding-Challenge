@@ -136,8 +136,12 @@ Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 - **Cost is not measurable.** `run.py` accumulates a single `total_tokens` figure and
   never prints it. At $5 in / $25 out per 1M, a combined total cannot produce a cost
   estimate; input and output must be tracked separately. → Stage 4
-- **No end-to-end run has been performed yet.** No sample generated output is committed,
-  and no real token or cost figures exist. → Stage 4
+- **Generated tests are the weak point.** The application source of a full run typechecks
+  clean and the dev server serves it, but the generated tests import symbols the
+  components do not export (`import { CarFilters }` against a default export) and assume
+  prop signatures that do not match. Tests are written last, against components the coder
+  can no longer see. → Stage 2
+- **No token or cost figures yet**, and no sample generated output is committed. → Stage 4
 - **No cross-file consistency pass after generation.** Files are written one at a time and
   never reconciled as a set. This holds for this app because dependencies flow one
   direction (schema → hook → component), but a spec requiring two files to co-mutate
@@ -149,6 +153,8 @@ Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 
 Token counts and costs from real runs, recorded as they happen.
 
-| Date | Spec | Input tokens | Output tokens | Est. cost | Result |
-|---|---|---|---|---|---|
-| — | — | — | — | — | `TBD` (Stage 4) |
+Token counts are `TBD` until `run.py` reports them (Stage 4); outcomes are recorded now.
+
+| Date | Spec | Tasks | Input | Output | Cost | Result |
+|---|---|---|---|---|---|---|
+| 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Completed. 10 files created, `App.tsx` modified, no boilerplate touched. App source typechecks clean, dev server returns 200. Validation fails on generated tests; fixer made no edits. |
