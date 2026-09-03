@@ -43,6 +43,9 @@ CONTRACT_FILES = [
 IGNORED_DIRS = {"node_modules", ".git", "dist", ".vite", "coverage", "docs"}
 
 
+PHASE_ORDER = {"scaffold": 0, "test": 1, "implementation": 2}
+
+
 def _usage(message) -> tuple[int, int]:
     """Input and output tokens for one call, counted separately.
 
@@ -99,13 +102,24 @@ Decompose this specification into an ordered list of file-level tasks. Every
 requirement stated in the specification must be covered by at least one task,
 and no task may introduce a requirement the specification does not state.
 
-Order the tasks so that a file is always written after everything it depends on:
+Plan the work test-first: the tests for a behaviour are written before the code
+that satisfies it, and must fail until that code exists.
 
-1. Data and schema definitions — types, API queries and mutations
-2. Hooks and other logic that consume those definitions
-3. Presentational components, leaf components before the components that compose them
-4. Integration into the application entry point
-5. Tests for the units above
+Order the tasks in three phases, tagging each task with its `phase`:
+
+1. `scaffold` — only contracts the tests need that do not already exist. If the
+   boilerplate already defines a type, query or mutation, the tests import it as
+   it stands; do not restate, re-document or re-export it. Most specifications
+   need no scaffold task at all.
+2. `test` — a test for every behaviour the specification calls for, written
+   against code that does not exist yet. Assert observable behaviour taken from
+   the specification, never the internals of an implementation you have in mind.
+   Each test task must state the import path and the exported names and
+   signatures it expects, because those become the contract the implementation
+   is written to satisfy.
+3. `implementation` — the code that makes those tests pass, leaf modules before
+   the modules that compose them, finishing with integration into the
+   application entry point.
 
 Each task covers exactly one file. Reuse the boilerplate's existing paths, import
 aliases and conventions, and prefer extending an existing file over creating a
@@ -127,9 +141,14 @@ Output ONLY the structured plan."""
     if plan_result is None:
         raise RuntimeError(f"planner returned no usable plan: {result['parsing_error']}")
 
+    # Sort rather than trust: a test written after its implementation is not a
+    # failing-test-first workflow, whatever the plan claims. Python's sort is
+    # stable, so dependency order inside each phase is preserved.
+    tasks = sorted(plan_result.tasks, key=lambda t: PHASE_ORDER.get(t.phase, 2))
+
     in_tok, out_tok = _usage(result["raw"])
     return {
-        "plan": plan_result.tasks,
+        "plan": tasks,
         "current_task_index": 0,
         "input_tokens": state["input_tokens"] + in_tok,
         "output_tokens": state["output_tokens"] + out_tok,
@@ -179,8 +198,30 @@ def coder_node(state: AgentState) -> dict:
     existing_content = read_project_file(state["target_dir"], task.filepath)
     generated = state["generated_files"]
 
+    if task.phase == "test":
+        phase_guidance = (
+            "This is a test, and the code it exercises does not exist yet. It is "
+            "expected to fail when run — that is the point. Write it against the "
+            "behaviour the specification describes, and be precise about the import "
+            "path and the exported names and signatures you expect, because the "
+            "implementation will be written to match this file. Do not write a test "
+            "that would pass against missing code."
+        )
+    elif task.phase == "implementation":
+        phase_guidance = (
+            "The tests shown above are already written and are the specification for "
+            "this file. Conform to the import paths, exported names, prop shapes and "
+            "signatures they expect, and make them pass. Do not modify them."
+        )
+    else:
+        phase_guidance = (
+            "This is a shared contract that later tests will import. Define types and "
+            "API documents only; implement no behaviour here."
+        )
+
     prompt = f"""You are generating application code for: {task.filepath}
 Task purpose: {task.description}
+Phase: {task.phase}. {phase_guidance}
 
 Pre-existing project context:
 {state['boilerplate_context']}
@@ -225,6 +266,26 @@ Return ONLY the raw code for the file, with no markdown code fences and no prose
         "output_tokens": state["output_tokens"] + out_tok,
         "generated_files": {**generated, task.filepath: clean_code},
     }
+
+
+def red_check_node(state: AgentState) -> dict:
+    """Run the suite once the tests exist but before any code satisfies them.
+
+    A test-first workflow is only real if the tests actually fail first. Tests
+    that pass here are testing nothing, and that is worth surfacing rather than
+    discovering later when everything is green for the wrong reason.
+    """
+    target_dir = state["target_dir"]
+    updates: dict = {"red_checked": True}
+
+    if not state["installed"]:
+        installed, output = run_npm_install(target_dir)
+        if not installed:
+            return {**updates, "red_is_failing": True, "red_output": output}
+        updates["installed"] = True
+
+    passed, output = run_validation_suite(target_dir)
+    return {**updates, "red_is_failing": not passed, "red_output": output}
 
 
 def validator_node(state: AgentState) -> dict:
@@ -300,7 +361,12 @@ Diagnose the root cause and return the complete corrected contents of the single
 file that needs to change. {scope}
 
 Preserve everything that is already correct — return the whole file, not a
-fragment, and do not rewrite working code beyond what the error requires."""
+fragment, and do not rewrite working code beyond what the error requires.
+
+The tests were written before the code, deliberately, and they encode the
+specification. Prefer correcting the implementation over changing a test. Only
+change a test when it contradicts the specification or cannot compile — never to
+make a genuine failure disappear."""
 
     raw_result = structured_llm.invoke(
         [

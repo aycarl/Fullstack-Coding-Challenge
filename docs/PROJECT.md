@@ -51,20 +51,21 @@ Vitest + Testing Library
 ### Node topology
 
 ```
-inspector → planner → coder ──┐
-                       ↑      │ (loops until plan exhausted)
-                       └──────┘
-                              ↓
-                          validator ⇄ fixer
-                              ↓
-                             END        (pass, or retries exhausted)
+inspector → planner → coder ──┐                 coder ──┐
+                       ↑      │ scaffold+tests    ↑      │ implementations
+                       └──────┘                   └──────┘
+                              ↓                          ↓
+                          red_check ───────────────→ validator ⇄ fixer
+                       (tests must fail here)             ↓
+                                                         END   (pass, or retries exhausted)
 ```
 
 | Node | File | Responsibility |
 |---|---|---|
 | `inspector` | `nodes.py` | Reads boilerplate contracts into context: `package.json`, `src/types.ts`, `src/mocks/handlers.ts`, `src/App.tsx` |
 | `planner` | `nodes.py` | Spec → ordered `FileTask` list via Pydantic structured output |
-| `coder` | `nodes.py` | Writes one file per loop iteration, advancing `current_task_index` |
+| `coder` | `nodes.py` | Writes one file per loop iteration, advancing `current_task_index`. Prompted differently per task phase |
+| `red_check` | `nodes.py` | Runs the suite once tests exist and no implementation does; reports if they wrongly pass |
 | `validator` | `nodes.py` / `tools.py` | Runs `npm run typecheck`, then `npm run test` |
 | `fixer` | `nodes.py` | Reads validator output, rewrites the broken file, cycles back to validator |
 
@@ -115,6 +116,18 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
 - **The fixer's chosen path is treated as untrusted** — it is the one place the model
   picks a write target, so `resolve_project_path` rejects anything resolving outside the
   output directory.
+- **Work is planned test-first, and the ordering is sorted rather than trusted** — the
+  planner tags each task `scaffold`, `test` or `implementation`, and `planner_node`
+  stable-sorts by phase. A test emitted after its implementation is not a
+  failing-test-first workflow whatever the plan claims; sorting makes the property hold
+  by construction, and the stable sort preserves dependency order within each phase.
+- **The red phase verifies that the tests actually fail** — without it, "test-first" is
+  only a claim about ordering. A suite that passes before any implementation exists
+  asserts nothing, and `red_check` says so rather than letting it go green later for the
+  wrong reason.
+- **The fixer is told to prefer correcting the implementation over changing a test** —
+  given a failing test and a free hand, the cheapest repair is to weaken the assertion,
+  which would quietly undo the point of writing it first.
 - **The coder sees every file it has already written** — carried in state as
   `generated_files` and injected into each prompt, so a file's imports are checked against
   the real exports of its dependencies rather than guessed. Tests are planned last, which
@@ -150,6 +163,14 @@ Current, as of Stage 0. Each is scheduled against a stage in `TICKETS.md`.
 - **Cost is not measurable.** `run.py` accumulates a single `total_tokens` figure and
   never prints it. At $5 in / $25 out per 1M, a combined total cannot produce a cost
   estimate; input and output must be tracked separately. → Stage 4
+- **The fixer can patch the same file twice without noticing it did not help.** Observed
+  in the test-first run: it spent all three retries rewriting `useCarInventory.test.tsx`
+  and never reached the eleven failing App integration tests. `last_patched_file` is in
+  state but unused for this. Not yet scheduled.
+- **Test-first costs roughly twice as much per run.** 449K input / 78K output against
+  174K / 42K, partly real coverage (59 tests against 33) and partly the manifest
+  quadratic worsening: tests are written early and then re-injected into every
+  implementation call.
 - **The coder ignores the `lib` target it is shown.** `tsconfig.json` is in context and
   declares `"lib": ["ES2020"]`, yet three consecutive runs reached for `Array.prototype.at`
   (ES2022). The type error names the fix in its own text, so it is a good test of whether
@@ -172,4 +193,6 @@ Token counts are `TBD` until `run.py` reports them (Stage 4); outcomes are recor
 |---|---|---|---|---|---|---|
 | 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Run 5, pre-manifest. 10 files created, no boilerplate touched. App source clean, dev server 200. Tests fail on guessed imports. |
 | 2026-09-02 | `spec.txt` | 11 | `TBD` | `TBD` | `TBD` | Run 6, with manifest. 18/21 tests pass. Cross-file import errors gone; 4 single-file type errors remain. |
+| 2026-09-03 | `spec.txt` | 14 | 449,265 | 77,710 | $4.19 | Test-first. Red phase correct. Typecheck clean, 48/59 tests pass; fixer looped on one file. Scaffold phase edited `queries.ts` — since tightened. |
+| 2026-09-02 | `spec.txt` | 11 | 174,473 | 41,710 | $1.92 | First run with cost reporting. Fixer patched two files; still failing at retry limit. |
 | 2026-09-02 | `spec.txt` | 13 | `TBD` | `TBD` | `TBD` | Run 7, reference files added. **36/38 tests pass, 1 type error.** Fixer still made no edits. |

@@ -1,10 +1,17 @@
 import json
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 from pydantic import BaseModel, Field, field_validator
 
 class FileTask(BaseModel):
     filepath: str = Field(description="Relative path to file")
     action: str = Field(description="'create' or 'modify'")
+    phase: Literal["scaffold", "test", "implementation"] = Field(
+        description=(
+            "'scaffold' for shared contracts the tests import, 'test' for a test "
+            "written before the code it exercises, 'implementation' for code "
+            "written to satisfy an existing test"
+        )
+    )
     description: str = Field(description="Purpose of this task and requirements")
 
 class AgentPlan(BaseModel):
@@ -48,6 +55,10 @@ class AgentState(TypedDict):
     installed: bool
     # Path the fixer rewrote on the last cycle, or None if it could not act.
     last_patched_file: Optional[str]
+    # Result of running the suite after the tests exist but before any code does.
+    red_checked: bool
+    red_is_failing: bool
+    red_output: Optional[str]
     # filepath -> content for every file written so far this run, so each coder
     # call can see the real exports of the files it is about to import from.
     generated_files: Dict[str, str]

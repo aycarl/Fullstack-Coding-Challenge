@@ -2,7 +2,14 @@ from anthropic import APIConnectionError, APIStatusError, APITimeoutError
 from langgraph.graph import StateGraph, END
 from langgraph.types import RetryPolicy
 from state import AgentState
-from nodes import inspector_node, planner_node, coder_node, validator_node, fixer_node
+from nodes import (
+    inspector_node,
+    planner_node,
+    coder_node,
+    red_check_node,
+    validator_node,
+    fixer_node,
+)
 
 
 
@@ -34,9 +41,14 @@ LLM_RETRY = RetryPolicy(
 )
 
 def route_coding(state: AgentState) -> str:
-    if state["current_task_index"] < len(state["plan"]):
-        return "coder"
-    return "validator"
+    idx = state["current_task_index"]
+    plan = state["plan"]
+    if idx >= len(plan):
+        return "validator"
+    # Crossing from tests into the code that satisfies them: prove they fail first.
+    if not state["red_checked"] and plan[idx].phase == "implementation":
+        return "red_check"
+    return "coder"
 
 def route_validation(state: AgentState) -> str:
     if state["is_passing"]:
@@ -51,6 +63,7 @@ def build_graph():
     workflow.add_node("inspector", inspector_node)
     workflow.add_node("planner", planner_node, retry_policy=LLM_RETRY)
     workflow.add_node("coder", coder_node, retry_policy=LLM_RETRY)
+    workflow.add_node("red_check", red_check_node)
     workflow.add_node("validator", validator_node)
     workflow.add_node("fixer", fixer_node, retry_policy=LLM_RETRY)
     
@@ -58,7 +71,12 @@ def build_graph():
     workflow.add_edge("inspector", "planner")
     workflow.add_edge("planner", "coder")
     
-    workflow.add_conditional_edges("coder", route_coding, {"coder": "coder", "validator": "validator"})
+    workflow.add_conditional_edges(
+        "coder",
+        route_coding,
+        {"coder": "coder", "red_check": "red_check", "validator": "validator"},
+    )
+    workflow.add_edge("red_check", "coder")
     workflow.add_conditional_edges("validator", route_validation, {END: END, "fixer": "fixer"})
     workflow.add_edge("fixer", "validator")
     

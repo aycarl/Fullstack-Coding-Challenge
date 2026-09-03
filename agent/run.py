@@ -59,7 +59,10 @@ def main():
         "output_tokens": 0,
         "generated_files": {},
         "installed": False,
-        "last_patched_file": None
+        "last_patched_file": None,
+        "red_checked": False,
+        "red_is_failing": False,
+        "red_output": None
     }
 
     # Run state machine. Nodes return running totals, so the last value seen for
@@ -77,6 +80,11 @@ def main():
                 console.print(f"[cyan][Plan Created][/cyan] {len(state_update['plan'])} tasks defined.")
             elif node_name == "coder":
                 console.print(f"[yellow][Code Gen][/yellow] Completed task {state_update['current_task_index']}")
+            elif node_name == "red_check":
+                if state_update["red_is_failing"]:
+                    console.print("[blue][Red Phase][/blue] Tests fail before implementation, as expected.")
+                else:
+                    console.print("[bold yellow][Red Phase][/bold yellow] Tests PASSED with no implementation — they assert nothing useful.")
             elif node_name == "validator":
                 passing = state_update["is_passing"]
                 status = "[green]PASSED[/green]" if passing else "[red]FAILED[/red]"
