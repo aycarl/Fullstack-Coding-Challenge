@@ -224,7 +224,11 @@ def coder_node(state: AgentState) -> dict:
             "behaviour the specification describes, and be precise about the import "
             "path and the exported names and signatures you expect, because the "
             "implementation will be written to match this file. Do not write a test "
-            "that would pass against missing code."
+            "that would pass against missing code.\n\n"
+            "The mock data seeded by the boilerplate is shown above. Any fixture "
+            "standing for a record the test itself creates must differ from every "
+            "seeded record in the fields the test queries on, or the assertion "
+            "cannot tell the new record from the seeded one and will match both."
         )
     elif task.phase == "implementation":
         phase_guidance = (
@@ -384,8 +388,10 @@ fragment, and do not rewrite working code beyond what the error requires.
 
 The tests were written before the code, deliberately, and they encode the
 specification. Prefer correcting the implementation over changing a test. Only
-change a test when it contradicts the specification or cannot compile — never to
-make a genuine failure disappear."""
+change a test when it contradicts the specification, cannot compile, or cannot
+discriminate — an assertion matching several elements when it means to identify one
+is a defective assertion, not a genuine failure being hidden, and correcting it is
+the right fix. Never weaken an assertion that is failing for a real reason."""
 
     raw_result = structured_llm.invoke(
         [
