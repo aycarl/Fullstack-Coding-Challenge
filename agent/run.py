@@ -17,7 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description="Autonomous Frontend Code Generator")
     parser.add_argument("--spec", default="spec.txt", help="Path to input text spec")
     parser.add_argument("--boilerplate", default="..", help="Path to starter boilerplate")
-    parser.add_argument("--output", default="./generated-app", help="Output directory")
+    parser.add_argument("--output", default="../generated-app", help="Output directory")
     args = parser.parse_args()
 
     if not os.getenv("ANTHROPIC_API_KEY"):

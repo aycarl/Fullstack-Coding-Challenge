@@ -5,8 +5,8 @@ TypeScript frontend into the provided boilerplate — planning the work as order
 writing each file, then validating its own output with the project's real `typecheck` and
 `test` scripts and repairing what fails.
 
-**The deliverable is the agent.** `agent/generated-app/` is committed as evidence that it
-works, so you can inspect the output without spending an API call.
+**The deliverable is the agent.** `generated-app/` is committed as evidence that it works,
+so you can inspect the output without spending an API call.
 
 The original challenge brief is preserved at [`CHALLENGE.md`](CHALLENGE.md).
 
@@ -18,7 +18,7 @@ The original challenge brief is preserved at [`CHALLENGE.md`](CHALLENGE.md).
 make setup                                        # installs uv if missing, syncs the agent env
 echo "ANTHROPIC_API_KEY=sk-ant-..." > agent/.env  # your key; nothing else is needed
 
-make generate                                     # ~9 min, ~$2.75 — writes agent/generated-app/
+make generate                                     # ~15 min, ~$4.60 — writes generated-app/
 make test                                         # typecheck + tests on what it built
 make test-agent                                   # the agent's own test suite
 make dev                                          # http://localhost:5173
@@ -33,8 +33,8 @@ make generate SPEC=spec-alt.md
 Requires **Node 20+** and an Anthropic API key. `make setup` handles
 [uv](https://docs.astral.sh/uv/).
 
-> Each run replaces `agent/generated-app/` entirely. Don't run two at once — generation
-> starts by deleting the target directory.
+> Each run replaces `generated-app/` entirely. A lock file prevents two runs at once, since
+> generation starts by deleting the target directory.
 
 ---
 
@@ -164,8 +164,9 @@ agent/                  the deliverable
   tests/                the agent's own test suite
   spec.txt              sample spec (default input)
   spec-alt.md           unrelated spec, for generalization
-  generated-app/        committed sample output
   logs/sample-run.txt   committed sample run log
+
+generated-app/          committed sample output — the agent's, not hand-written
 
 docs/
   WRITEUP.md            model choice, architecture, cost, tradeoffs

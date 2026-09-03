@@ -31,7 +31,7 @@ agent/logs/*
 !agent/logs/sample-run.txt
 
 # Run lock, written beside the output directory while a run holds it.
-agent/*.lock
+generated-app.lock
 
 # --- OS / editor cruft ---
 *.local

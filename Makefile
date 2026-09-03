@@ -6,7 +6,7 @@
 #   make generate SPEC=spec-alt.md
 
 AGENT := agent
-OUT   := $(AGENT)/generated-app
+OUT   := generated-app
 SPEC  ?= spec.txt
 
 .DEFAULT_GOAL := help
@@ -37,13 +37,13 @@ setup: ## Install uv if missing, sync the agent env, and check for an API key
 	@echo "         or:  make generate SPEC=spec-alt.md   (a different spec)"
 
 generate: ## Run the agent to scaffold the app from SPEC (replaces previous output)
-	cd $(AGENT) && rm -rf generated-app && uv run run.py --spec $(SPEC) --output ./generated-app
+	rm -rf $(OUT) && cd $(AGENT) && uv run run.py --spec $(SPEC) --output ../$(OUT)
 
 test: ## Install from the lockfile, then typecheck and test the generated app
-	cd $(OUT) && npm ci && npm run typecheck && npm run test
+	cd $(OUT) && npm run typecheck && npm run test
 
 test-agent: ## Run the agent's own test suite
 	cd $(AGENT) && uv run pytest
 
 dev: ## Install from the lockfile, then serve the generated app at localhost:5173
-	cd $(OUT) && npm ci && npm run dev
+	cd $(OUT) && npm run dev

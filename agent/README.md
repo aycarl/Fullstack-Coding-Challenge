@@ -9,11 +9,11 @@ Six LangGraph nodes — `inspector → planner → coder ⇄ red_check → valid
 ```bash
 uv sync
 echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-uv run run.py --spec spec.txt --output ./generated-app
+uv run run.py --spec spec.txt --output ../generated-app
 ```
 
 Paths default relative to this directory: `--spec spec.txt`, `--boilerplate ..`,
-`--output ./generated-app`. `ANTHROPIC_MODEL` overrides the model.
+`--output ../generated-app` (the repo root). `ANTHROPIC_MODEL` overrides the model.
 
 Tests for the agent itself: `uv run pytest` (or `make test-agent` from the repo root).
 
