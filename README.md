@@ -19,8 +19,8 @@ make setup                                        # installs uv if missing, sync
 echo "ANTHROPIC_API_KEY=sk-ant-..." > agent/.env  # your key; nothing else is needed
 
 make generate                                     # ~9 min, ~$2.75 — writes agent/generated-app/
-make check                                        # the agent's own test suite
 make test                                         # typecheck + tests on what it built
+make test-agent                                   # the agent's own test suite
 make dev                                          # http://localhost:5173
 ```
 

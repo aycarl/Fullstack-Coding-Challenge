@@ -15,7 +15,7 @@ uv run run.py --spec spec.txt --output ./generated-app
 Paths default relative to this directory: `--spec spec.txt`, `--boilerplate ..`,
 `--output ./generated-app`. `ANTHROPIC_MODEL` overrides the model.
 
-Tests for the agent itself: `uv run pytest`.
+Tests for the agent itself: `uv run pytest` (or `make test-agent` from the repo root).
 
 From the repo root, `make setup` then `make generate` does the same thing.
 
