@@ -34,6 +34,5 @@ agent/logs/*
 *.local
 .DS_Store
 
-# Agent output. The sample run in agent/generated-app/ is committed deliberately as
-# evidence that the pipeline produces a runnable project; its node_modules and build
-# output are already covered by the rules at the top of this file.
+# Agent output (a sample run is committed deliberately at Stage 4)
+agent/generated-app/

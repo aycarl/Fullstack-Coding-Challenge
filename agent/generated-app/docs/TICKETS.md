@@ -106,26 +106,26 @@ Make the retry loop actually work.
 
 ---
 
-## Stage 4 — End-to-end and generalization · `DONE`
+## Stage 4 — End-to-end and generalization · `IN PROGRESS`
 
 Prove it works end to end, prove it generalizes, and measure what a run actually costs.
 
 **Acceptance criteria**
 
-- [x] Full run against the real `spec.txt` completes; everything it surfaces is fixed
+- [ ] Full run against the real `spec.txt` completes; everything it surfaces is fixed
 - [x] `input_tokens` and `output_tokens` tracked separately in state (from LangChain's
       `usage_metadata`); totals and estimated cost printed at end of run
 - [x] `spec-alt.md` written describing a variation, and a run against it produces output
       that reflects the changed spec
 - [x] Both runs' token counts and costs recorded in `docs/PROJECT.md`
-- [x] `cd generated-app && npm install && npm run typecheck && npm run test && npm run dev`
+- [ ] `cd generated-app && npm install && npm run typecheck && npm run test && npm run dev`
       all succeed
 
 **Commits:** `fix: resolve issues found in first full end-to-end run` · `feat(cli): report input/output tokens and estimated cost per run` · `test: confirm generalization against a modified spec`
 
 ---
 
-## Stage 4.5 — Legible decomposition, run logging, live CLI feedback · `DONE`
+## Stage 4.5 — Legible decomposition, run logging, live CLI feedback · `TODO`
 
 `README.md` requirement 2 asks the agent to decompose the spec into discrete, ordered
 tasks, with examples phrased as capabilities ("create useCars hook", "build CarCard
@@ -136,28 +136,28 @@ between tasks. The ordered task list is real and invisible. This stage makes it 
 
 **Acceptance criteria**
 
-- [x] `FileTask.feature` labels each task with the user-facing capability it serves;
+- [ ] `FileTask.feature` labels each task with the user-facing capability it serves;
       tasks serving one capability share a label
-- [x] Execution order is unchanged — the phase stable-sort still runs every test before
+- [ ] Execution order is unchanged — the phase stable-sort still runs every test before
       any implementation, and `graph.py` is untouched. Only the rendering groups by
       feature, using the order the planner introduced them in (captured pre-sort)
-- [x] The plan prints grouped by feature, numbered in execution order, so a reader sees
+- [ ] The plan prints grouped by feature, numbered in execution order, so a reader sees
       both the capability a file serves and when it is actually built
-- [x] Every event streams live to stdout **and** appends to
+- [ ] Every event streams live to stdout **and** appends to
       `agent/logs/<timestamp>_generated_logs.txt`, flushed as it happens — a run killed
       at task 9 still leaves a record of the first eight
-- [x] The file copy carries full task descriptions, so it stands alone as a record of
+- [ ] The file copy carries full task descriptions, so it stands alone as a record of
       what the agent decided to do; the console copy stays scannable
-- [x] A Rich status line names the step **ahead**, not the one just finished, and covers
+- [ ] A Rich status line names the step **ahead**, not the one just finished, and covers
       the previously silent `npm install` inside the first validation
-- [x] Per-task input/output token deltas reported, derived from the running totals the
+- [ ] Per-task input/output token deltas reported, derived from the running totals the
       nodes already return — no node changes
-- [x] `agent/logs/` gitignored except one committed `sample-run.txt` as reviewer evidence
+- [ ] `agent/logs/` gitignored except one committed `sample-run.txt` as reviewer evidence
       (pattern must be `agent/logs/*`, not `agent/logs/` — git cannot re-include a file
       inside an excluded directory)
-- [x] Coder is told that a fixture standing for a record the test creates must differ
+- [ ] Coder is told that a fixture standing for a record the test creates must differ
       from every seeded mock record in the fields the test queries on
-- [x] Fixer may correct an assertion that cannot discriminate between multiple matching
+- [ ] Fixer may correct an assertion that cannot discriminate between multiple matching
       elements, which is a defective assertion rather than a genuine failure being hidden
 
 **Commits:** `feat(planner): group file tasks under feature labels` · `feat(cli): stream a live run log to stdout and agent/logs/` · `fix(nodes): avoid fixture collisions with seeded mocks, let the fixer repair ambiguous assertions` · `test: re-run end to end, commit sample output and run log`
