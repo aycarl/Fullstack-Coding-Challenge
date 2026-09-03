@@ -13,5 +13,14 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
+    // Without this, Vitest's default glob sweeps the agent's generated output as
+    // well. Those tests resolve "@/..." against their own src, not this one, so
+    // running the suite here would fail on imports that are correct over there.
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "agent/**",
+      "generated-app/**",
+    ],
   },
 });
