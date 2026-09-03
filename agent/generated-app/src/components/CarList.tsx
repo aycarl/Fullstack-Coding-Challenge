@@ -1,55 +1,83 @@
-import { Alert, Box, CircularProgress, Grid, Typography } from "@mui/material";
+import { Box, Alert, CircularProgress } from "@mui/material";
+import { useCars } from "@/hooks/useCarInventory";
+import { useCarFilters } from "@/hooks/useCarFilters";
+import CarFilters from "@/components/CarFilters";
 import CarCard from "@/components/CarCard";
-import type { Car } from "@/types";
 
+/**
+ * Props accepted by {@link CarList}.
+ */
 export interface CarListProps {
-  cars: Car[];
-  loading: boolean;
-  error?: Error;
+  /** Called with the car id when a card in the gallery is selected. */
+  onSelectCar?: (id: string) => void;
 }
 
 /**
- * Presentational gallery of cars.
+ * Gallery of the car inventory.
  *
- * Rendering precedence:
- *   1. `error`   — an error alert (car cards are never shown alongside it)
- *   2. `loading` — a centred progress indicator
- *   3. empty     — an empty-state message when there are no cars
- *   4. otherwise — a responsive grid of `CarCard`s
+ * Fetches the inventory through {@link useCars}, narrows it with
+ * {@link useCarFilters}, renders the controlled {@link CarFilters} bar wired to
+ * that state and one {@link CarCard} per remaining car. Selection is forwarded
+ * to `onSelectCar`.
  */
-export default function CarList({ cars, loading, error }: CarListProps) {
+export default function CarList({ onSelectCar }: CarListProps) {
+  const { cars, loading, error } = useCars();
+  const {
+    search,
+    setSearch,
+    year,
+    setYear,
+    sortBy,
+    setSortBy,
+    years,
+    filteredCars,
+    clearFilters,
+  } = useCarFilters(cars);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   if (error) {
     return <Alert severity="error">{error.message}</Alert>;
   }
 
-  if (loading) {
-    return (
-      <Box
-        sx={{ display: "flex", justifyContent: "center", py: 6 }}
-        aria-busy="true"
-      >
-        <CircularProgress aria-label="Loading cars" />
-      </Box>
-    );
-  }
-
-  if (cars.length === 0) {
-    return (
-      <Box sx={{ py: 6, textAlign: "center" }}>
-        <Typography color="text.secondary">
-          No cars to display. Try adjusting your search or add a new car.
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
-    <Grid container spacing={3}>
-      {cars.map((car) => (
-        <Grid item key={car.id} xs={12} sm={6} md={4}>
-          <CarCard car={car} />
-        </Grid>
-      ))}
-    </Grid>
+    <Box>
+      <CarFilters
+        search={search}
+        onSearchChange={setSearch}
+        year={year}
+        onYearChange={setYear}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        years={years}
+        onClear={clearFilters}
+      />
+
+      <Box
+        sx={{
+          display: "grid",
+          gap: 2,
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm: "repeat(2, 1fr)",
+            md: "repeat(3, 1fr)",
+          },
+        }}
+      >
+        {filteredCars.map((car) => (
+          <CarCard
+            key={car.id}
+            car={car}
+            {...(onSelectCar ? { onSelect: onSelectCar } : {})}
+          />
+        ))}
+      </Box>
+    </Box>
   );
 }

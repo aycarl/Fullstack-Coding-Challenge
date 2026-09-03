@@ -65,8 +65,10 @@ Per-node responsibilities are tabulated in [`PROJECT.md`](PROJECT.md#nodes).
 |---|---|---|---|---|---|
 | `spec.txt` | 15 | 315,167 | 46,753 | **$2.74** | 68/68, typecheck clean, dev 200 |
 | `spec-alt.md` | 14 | 285,395 | 57,222 | **$2.86** | 68/68, typecheck clean, dev 200 |
+| `spec.txt`, extended | 18 | 548,592 | 74,047 | **$4.59** | 62/62, typecheck clean, dev 200 |
 
-**~$2.75–$3.00 for a clean run**; $1.92–$4.19 across every measured run including failures.
+**~$2.75–$4.60 for a clean run**, scaling with how much the spec asks for: the 18-task
+version costs two-thirds more than the 15-task one. $1.92–$4.59 across every measured run.
 Failed runs cost *more*, not less — each retry is another planner-grade call.
 
 Input dominates output ~6:1. That's the manifest: every file written is re-injected into
@@ -88,18 +90,20 @@ the next call.
 - **Testing the parts that decide.** 68 tests over routing, the path guard, ordering and
   cost. Mutation-checked: reverting the retry off-by-one, the traversal guard, the phase
   order or the asymmetric rate each fails a test.
+- **Noticing when a repair did nothing.** The validator fingerprints each failure, so a
+  rewrite that leaves the error identical withdraws that file from the next attempt. On the
+  extended spec the fixer rewrote a test, saw no change, and moved to the component — which
+  fixed it. Before this it could spend both attempts on one file.
 - **Prompting against observed failures.** Every negative constraint exists because a run
   failed that way — no no-op tasks, no domain nouns, no fixture colliding with seeded mocks.
 
 ## What I'd improve
 
-1. **Stop the fixer re-patching a file that didn't help.** It can spend its whole budget
-   rewriting one file without noticing the failure is unchanged. `last_patched_file` is
-   already in state. Highest-value fix.
-2. **Select context instead of injecting all of it.** The manifest is quadratic.
-3. **Lock the output directory.** Two concurrent runs silently corrupt each other; this
-   cost a real run mid-validation during development.
-4. **Per-feature red/green slices.** Tasks carry a feature label but execute phase-major.
+1. **Select context instead of injecting all of it.** The manifest is quadratic, and the
+   extended spec pushed a run to $4.59 largely on re-injected input.
+2. **Per-feature red/green slices.** Tasks carry a feature label but execute phase-major.
+3. **A `--plan-only` mode.** One planner call, print the decomposition, exit — so the
+   ordered task list can be inspected for cents rather than for the price of a full run.
 
 ---
 

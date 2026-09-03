@@ -1,28 +1,31 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Container, Typography } from "@mui/material";
 import AddCarForm from "@/components/AddCarForm";
-import CarFilters from "@/components/CarFilters";
 import CarList from "@/components/CarList";
-import { useCars } from "@/hooks/useCars";
-import { filterAndSortCars, type SortBy } from "@/utils/filterAndSortCars";
+import CarDetail from "@/components/CarDetail";
 
 /**
  * Application shell.
  *
- * Owns the two pieces of view state the gallery needs — the model search text
- * and the sort field — and derives the visible list from the inventory returned
- * by `useCars()` via `filterAndSortCars`. All GraphQL access lives in the hook.
+ * Owns the only piece of app-level state — the id of the car currently being
+ * inspected. When nothing is selected the gallery view is shown (heading, the
+ * add-car form and the filterable inventory list); selecting a card swaps the
+ * whole view for the single-car record, whose back control clears the
+ * selection and returns to the gallery.
+ *
+ * This module performs no GraphQL work itself: every request is made by the
+ * components and hooks it composes.
  */
 export default function App() {
-  const { cars, loading, error, addCar, adding } = useCars();
+  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
 
-  const [search, setSearch] = useState<string>("");
-  const [sortBy, setSortBy] = useState<SortBy>("year");
-
-  const visibleCars = useMemo(
-    () => filterAndSortCars(cars, search, sortBy),
-    [cars, search, sortBy]
-  );
+  if (selectedCarId !== null) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <CarDetail id={selectedCarId} onBack={() => setSelectedCarId(null)} />
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -30,16 +33,9 @@ export default function App() {
         Car Inventory Manager
       </Typography>
 
-      <AddCarForm onAdd={addCar} submitting={adding} />
+      <AddCarForm />
 
-      <CarFilters
-        search={search}
-        onSearchChange={setSearch}
-        sortBy={sortBy}
-        onSortByChange={setSortBy}
-      />
-
-      <CarList cars={visibleCars} loading={loading} error={error} />
+      <CarList onSelectCar={(id) => setSelectedCarId(id)} />
     </Container>
   );
 }

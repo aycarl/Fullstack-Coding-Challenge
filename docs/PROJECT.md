@@ -87,6 +87,14 @@ Diagram in the [root README](../README.md#how-it-works). Routing lives in `graph
 - **The agent's own tests cover its pure core** — routing, the path guard, cost
   arithmetic, ordering and logging. Nothing mocks an LLM call: the parts worth testing are
   the ones that decide, and those are all pure.
+- **A repair that changes nothing withdraws its file** — the validator fingerprints each
+  failure (paths plus TS codes, so timings don't count) and compares it to the last one.
+  An identical failure means the file rewritten in between was not the cause, so it stops
+  being offered as a write target. With only two repair attempts, one wasted cycle is half
+  the budget.
+- **One run at a time per output directory** — generation begins by deleting the target,
+  so two runs destroy each other's work. A lock file sits beside the directory, not inside
+  it, and a lock left by a crashed run is reclaimed rather than blocking every run after.
 - **Boilerplate is copied to a separate output directory** — every run starts clean, and
   `run.py` refuses to delete the CWD or the source.
 
@@ -97,10 +105,6 @@ Diagram in the [root README](../README.md#how-it-works). Routing lives in `graph
   this does not have.
 - **Context grows quadratically.** Every prior file is re-injected into each coder call —
   input climbs 5,127 → 30,347 tokens across a run.
-- **The fixer can re-patch a file that did not help.** Two repair attempts, no memory of
-  whether the last one worked. `last_patched_file` is in state and unused for this.
-- **Concurrent runs corrupt each other.** Generation begins by deleting the output
-  directory, and there is no lock.
 
 ## Measured Runs
 
@@ -111,6 +115,7 @@ Diagram in the [root README](../README.md#how-it-works). Routing lives in `graph
 | 09-03 | `spec.txt` | 12 | 374,085 | 62,782 | $3.44 | 37/38 — fixture collided with a seeded mock |
 | 09-03 | `spec-alt.md` | 14 | 285,395 | 57,222 | $2.86 | **68/68, typecheck clean, dev 200** |
 | 09-03 | `spec.txt` | 15 | 315,167 | 46,753 | $2.74 | **68/68, typecheck clean, dev 200** |
+| 09-03 | `spec.txt` (extended) | 18 | 548,592 | 74,047 | $4.59 | **62/62, typecheck clean, dev 200.** Adds the year filter, `useCarFilters` and a `GET_CAR` detail view. Fixer withdrew a test file that changed nothing, then fixed the component. |
 
 Earlier runs predate cost instrumentation. Failed runs cost more, not less — each retry is
 another planner-grade call.

@@ -1,185 +1,186 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
-import { Box, Button, Stack, TextField, Typography } from "@mui/material";
+import { useState } from "react";
+import type { FormEvent } from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { useAddCar } from "@/hooks/useCarInventory";
+import type { Car } from "@/types";
 
 /**
- * The payload handed to `onAdd` once the form validates.
+ * Props accepted by {@link AddCarForm}.
  */
-export interface AddCarInput {
-  make: string;
-  model: string;
-  year: number;
-  color: string;
-}
-
 export interface AddCarFormProps {
-  /** Called with the entered values (year coerced to a number) on a valid submit. */
-  onAdd: (input: AddCarInput) => Promise<void>;
-  /** Externally driven busy flag — disables the submit button while true. */
-  submitting?: boolean;
+  /** Called with the newly created car once the mutation succeeds. */
+  onAdded?: (car: Car) => void;
 }
 
-interface FormValues {
-  make: string;
-  model: string;
-  year: string;
-  color: string;
+/** Per-field validation messages; a missing key means the field is valid. */
+interface FieldErrors {
+  make?: string;
+  model?: string;
+  year?: string;
+  color?: string;
 }
 
-type FieldName = keyof FormValues;
-
-const EMPTY_VALUES: FormValues = {
-  make: "",
-  model: "",
-  year: "",
-  color: "",
+/** Helper text on an invalid field is announced, so it needs an alert role. */
+const HELPER_TEXT_SLOT_PROPS = {
+  formHelperText: { role: "alert" as const },
 };
-
-const NO_ERRORS: Record<FieldName, boolean> = {
-  make: false,
-  model: false,
-  year: false,
-  color: false,
-};
-
-const MESSAGE_ID = "add-car-form-message";
 
 /**
  * Controlled form for adding a car to the inventory.
  *
- * All four fields are required. Submitting with anything missing surfaces a
- * single validation message and never calls `onAdd`. After `onAdd` resolves the
- * fields are cleared; if it rejects, the entered values are preserved so the
- * user can retry.
+ * Every field is controlled local state. Submitting validates that make,
+ * model, year and color are supplied — when anything is missing the mutation
+ * is never fired and per-field messages are surfaced instead. On success the
+ * fields are reset and the created car is reported through `onAdded`; on
+ * failure the typed values are kept so the user can retry.
  */
-export default function AddCarForm({ onAdd, submitting = false }: AddCarFormProps) {
-  const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
-  const [errors, setErrors] = useState<Record<FieldName, boolean>>(NO_ERRORS);
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+export default function AddCarForm({ onAdded }: AddCarFormProps) {
+  const { addCar, loading, error } = useAddCar();
 
-  const busy = submitting || pending;
+  const [make, setMake] = useState<string>("");
+  const [model, setModel] = useState<string>("");
+  const [year, setYear] = useState<string>("");
+  const [color, setColor] = useState<string>("");
+  const [errors, setErrors] = useState<FieldErrors>({});
 
-  const handleChange =
-    (field: FieldName) => (event: ChangeEvent<HTMLInputElement>) => {
-      const next = event.target.value;
-      setValues((current) => ({ ...current, [field]: next }));
-      setErrors((current) =>
-        current[field] ? { ...current, [field]: false } : current
-      );
-    };
+  const validate = (): FieldErrors => {
+    const next: FieldErrors = {};
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    if (make.trim() === "") next.make = "Make is required";
+    if (model.trim() === "") next.model = "Model is required";
+
+    if (year.trim() === "") {
+      next.year = "Year is required";
+    } else if (!Number.isFinite(Number(year))) {
+      next.year = "Year must be a number";
+    }
+
+    if (color.trim() === "") next.color = "Color is required";
+
+    return next;
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const make = values.make.trim();
-    const model = values.model.trim();
-    const color = values.color.trim();
-    const yearRaw = values.year.trim();
+    const validation = validate();
+    setErrors(validation);
+    if (Object.keys(validation).length > 0) return;
 
-    const missing: Record<FieldName, boolean> = {
-      make: make === "",
-      model: model === "",
-      year: yearRaw === "",
-      color: color === "",
-    };
+    const created = await addCar({
+      make: make.trim(),
+      model: model.trim(),
+      year: Number(year),
+      color: color.trim(),
+    });
 
-    const hasMissing =
-      missing.make || missing.model || missing.year || missing.color;
-
-    const yearNumber = Number(yearRaw);
-    const yearInvalid =
-      !missing.year && (!Number.isFinite(yearNumber) || yearNumber <= 0);
-
-    if (hasMissing) {
-      setErrors(missing);
-      setMessage("All fields are required.");
-      return;
+    if (created) {
+      setMake("");
+      setModel("");
+      setYear("");
+      setColor("");
+      setErrors({});
+      onAdded?.(created);
     }
-
-    if (yearInvalid) {
-      setErrors({ ...NO_ERRORS, year: true });
-      setMessage("Year must be a valid number.");
-      return;
-    }
-
-    setErrors(NO_ERRORS);
-    setMessage(null);
-    setPending(true);
-
-    try {
-      await onAdd({ make, model, year: yearNumber, color });
-      setValues(EMPTY_VALUES);
-      setErrors(NO_ERRORS);
-      setMessage(null);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Failed to add the car."
-      );
-    } finally {
-      setPending(false);
-    }
-  }
+  };
 
   return (
     <Box
       component="form"
       onSubmit={handleSubmit}
       noValidate
-      aria-describedby={message ? MESSAGE_ID : undefined}
-      sx={{ mb: 4 }}
+      sx={{ mb: 3 }}
     >
+      <Typography variant="h6" component="h2" gutterBottom>
+        Add a car
+      </Typography>
+
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
-        alignItems={{ xs: "stretch", sm: "flex-start" }}
+        sx={{ flexWrap: "wrap", alignItems: "flex-start" }}
       >
         <TextField
-          id="add-car-make"
           label="Make"
-          value={values.make}
-          onChange={handleChange("make")}
-          error={errors.make}
-          fullWidth
+          value={make}
+          onChange={(event) => {
+            setMake(event.target.value);
+            setErrors((current) => ({ ...current, make: undefined }));
+          }}
+          error={Boolean(errors.make)}
+          {...(errors.make ? { helperText: errors.make } : {})}
+          slotProps={HELPER_TEXT_SLOT_PROPS}
+          size="small"
+          sx={{ minWidth: 160 }}
         />
+
         <TextField
-          id="add-car-model"
           label="Model"
-          value={values.model}
-          onChange={handleChange("model")}
-          error={errors.model}
-          fullWidth
+          value={model}
+          onChange={(event) => {
+            setModel(event.target.value);
+            setErrors((current) => ({ ...current, model: undefined }));
+          }}
+          error={Boolean(errors.model)}
+          {...(errors.model ? { helperText: errors.model } : {})}
+          slotProps={HELPER_TEXT_SLOT_PROPS}
+          size="small"
+          sx={{ minWidth: 160 }}
         />
+
         <TextField
-          id="add-car-year"
           label="Year"
           type="number"
-          value={values.year}
-          onChange={handleChange("year")}
-          error={errors.year}
-          fullWidth
+          value={year}
+          onChange={(event) => {
+            setYear(event.target.value);
+            setErrors((current) => ({ ...current, year: undefined }));
+          }}
+          error={Boolean(errors.year)}
+          {...(errors.year ? { helperText: errors.year } : {})}
+          slotProps={HELPER_TEXT_SLOT_PROPS}
+          size="small"
+          sx={{ minWidth: 120 }}
         />
+
         <TextField
-          id="add-car-color"
           label="Color"
-          value={values.color}
-          onChange={handleChange("color")}
-          error={errors.color}
-          fullWidth
+          value={color}
+          onChange={(event) => {
+            setColor(event.target.value);
+            setErrors((current) => ({ ...current, color: undefined }));
+          }}
+          error={Boolean(errors.color)}
+          {...(errors.color ? { helperText: errors.color } : {})}
+          slotProps={HELPER_TEXT_SLOT_PROPS}
+          size="small"
+          sx={{ minWidth: 160 }}
         />
+
         <Button
           type="submit"
           variant="contained"
-          disabled={busy}
-          sx={{ whiteSpace: "nowrap", py: { sm: 1.75 } }}
+          disabled={loading}
+          startIcon={
+            loading ? <CircularProgress size={16} color="inherit" /> : undefined
+          }
         >
-          Add Car
+          {loading ? "Adding car…" : "Add car"}
         </Button>
       </Stack>
 
-      {message ? (
-        <Typography id={MESSAGE_ID} color="error" sx={{ mt: 1.5 }}>
-          {message}
-        </Typography>
+      {error ? (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          {error.message}
+        </Alert>
       ) : null}
     </Box>
   );

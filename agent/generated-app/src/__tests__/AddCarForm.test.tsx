@@ -1,205 +1,393 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MockedProvider } from "@apollo/client/testing";
+import type { MockedResponse } from "@apollo/client/testing";
 import { describe, it, expect, vi } from "vitest";
+import { GET_CARS, ADD_CAR } from "@/graphql/queries";
 import AddCarForm from "@/components/AddCarForm";
+import CarList from "@/components/CarList";
+import type { Car } from "@/types";
 
 /**
- * Contract under test:
- *
- *   import AddCarForm from "@/components/AddCarForm";
- *
- *   <AddCarForm
- *     onAdd={(input: { make: string; model: string; year: number; color: string }) => Promise<void>}
- *     submitting?={boolean}
- *   />
- *
- * The form exposes labelled fields for make, model, year and color plus a
- * submit button. Submitting a valid form calls `onAdd` exactly once with the
- * entered values (year coerced to a number) and then clears the fields.
- * Submitting with empty required fields must not call `onAdd` and must surface
- * validation feedback.
+ * Fixtures deliberately use makes/models/years that do NOT appear in the seeded
+ * MSW data, so an assertion can never be satisfied by a seeded record.
  */
+function makeCar(
+  id: string,
+  make: string,
+  model: string,
+  year: number,
+  color: string
+) {
+  const label = `${make} ${model}`;
+  return {
+    __typename: "Car" as const,
+    id,
+    make,
+    model,
+    year,
+    color,
+    mobile: `https://placehold.co/640x360?text=${encodeURIComponent(label)}+Mobile`,
+    tablet: `https://placehold.co/1023x576?text=${encodeURIComponent(label)}+Tablet`,
+    desktop: `https://placehold.co/1440x810?text=${encodeURIComponent(label)}+Desktop`,
+  };
+}
 
-// Deliberately unlike every MSW-seeded record so the assertions below can only
-// ever match the values this test types in.
-const newCar = {
-  make: "Bertone",
-  model: "Stratos Zero",
-  year: 1970,
-  color: "Vermilion",
+const nevera = makeCar("981", "Rimac", "Nevera", 2022, "Midnight Purple");
+const huayra = makeCar("982", "Pagani", "Huayra", 2021, "Carbon Blue");
+
+const ADD_HUAYRA_VARIABLES = {
+  make: "Pagani",
+  model: "Huayra",
+  year: 2021,
+  color: "Carbon Blue",
 };
 
-function getFields() {
-  return {
-    make: screen.getByLabelText(/make/i),
-    model: screen.getByLabelText(/model/i),
-    year: screen.getByLabelText(/year/i),
-    color: screen.getByLabelText(/color/i),
-    submit: screen.getByRole("button", { name: /add|submit|save/i }),
-  };
+function getMakeField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /make/i });
+}
+
+function getModelField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /model/i });
+}
+
+function getYearField(): HTMLElement {
+  return screen.getByRole("spinbutton", { name: /year/i });
+}
+
+function getColorField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /color/i });
+}
+
+function getSubmitButton(): HTMLElement {
+  return screen.getByRole("button", { name: /add car/i });
 }
 
 async function fillForm(
   user: ReturnType<typeof userEvent.setup>,
   values: { make: string; model: string; year: string; color: string }
 ) {
-  const fields = getFields();
-  await user.clear(fields.make);
-  await user.type(fields.make, values.make);
-  await user.clear(fields.model);
-  await user.type(fields.model, values.model);
-  await user.clear(fields.year);
-  await user.type(fields.year, values.year);
-  await user.clear(fields.color);
-  await user.type(fields.color, values.color);
+  await user.clear(getMakeField());
+  await user.type(getMakeField(), values.make);
+  await user.clear(getModelField());
+  await user.type(getModelField(), values.model);
+  await user.clear(getYearField());
+  await user.type(getYearField(), values.year);
+  await user.clear(getColorField());
+  await user.type(getColorField(), values.color);
+}
+
+/**
+ * Each rendered card carries a fallback <img> whose alt is
+ * `${year} ${make} ${model}` (see CarCard), so the alt texts in DOM order are a
+ * faithful, ordered view of the rendered inventory cards.
+ */
+function renderedCardLabels(): string[] {
+  return screen
+    .queryAllByAltText(/^\d{4} /)
+    .map((img) => img.getAttribute("alt") ?? "");
+}
+
+function renderForm(
+  mocks: readonly MockedResponse[],
+  onAdded?: (car: Car) => void
+) {
+  return render(
+    <MockedProvider mocks={[...mocks]}>
+      <AddCarForm {...(onAdded ? { onAdded } : {})} />
+    </MockedProvider>
+  );
 }
 
 describe("AddCarForm", () => {
-  it("renders labelled fields for make, model, year and color plus a submit button", () => {
-    render(<AddCarForm onAdd={vi.fn(async () => {})} />);
+  it("renders fields for make, model, year and color plus a submit control", () => {
+    renderForm([]);
 
-    const fields = getFields();
-
-    expect(fields.make).toBeInTheDocument();
-    expect(fields.model).toBeInTheDocument();
-    expect(fields.year).toBeInTheDocument();
-    expect(fields.color).toBeInTheDocument();
-    expect(fields.submit).toBeInTheDocument();
-
-    expect(fields.make).toHaveValue("");
-    expect(fields.model).toHaveValue("");
-    expect(fields.color).toHaveValue("");
+    expect(getMakeField()).toBeInTheDocument();
+    expect(getModelField()).toBeInTheDocument();
+    expect(getYearField()).toBeInTheDocument();
+    expect(getColorField()).toBeInTheDocument();
+    expect(getSubmitButton()).toBeInTheDocument();
   });
 
-  it("calls onAdd once with the entered values, year as a number", async () => {
+  it("sends the AddCar mutation with the values that were typed in", async () => {
     const user = userEvent.setup();
-    const onAdd = vi.fn(async () => {});
+    const addCarResult = vi.fn(() => ({
+      data: { addCar: huayra },
+    }));
 
-    render(<AddCarForm onAdd={onAdd} />);
-
-    await fillForm(user, {
-      make: newCar.make,
-      model: newCar.model,
-      year: String(newCar.year),
-      color: newCar.color,
-    });
-
-    await user.click(getFields().submit);
-
-    await waitFor(() => expect(onAdd).toHaveBeenCalledTimes(1));
-
-    expect(onAdd).toHaveBeenCalledWith({
-      make: "Bertone",
-      model: "Stratos Zero",
-      year: 1970,
-      color: "Vermilion",
-    });
-
-    const [input] = onAdd.mock.calls[0] as unknown as [
-      { make: string; model: string; year: number; color: string }
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: addCarResult,
+      },
     ];
-    expect(typeof input.year).toBe("number");
-    expect(input.year).toBe(1970);
-  });
 
-  it("does not call onAdd and shows validation feedback when required fields are empty", async () => {
-    const user = userEvent.setup();
-    const onAdd = vi.fn(async () => {});
-
-    render(<AddCarForm onAdd={onAdd} />);
-
-    await user.click(getFields().submit);
-
-    expect(onAdd).not.toHaveBeenCalled();
-
-    expect(await screen.findByText(/required/i)).toBeInTheDocument();
-  });
-
-  it("does not call onAdd when only some required fields are filled", async () => {
-    const user = userEvent.setup();
-    const onAdd = vi.fn(async () => {});
-
-    render(<AddCarForm onAdd={onAdd} />);
-
-    const fields = getFields();
-    await user.type(fields.make, newCar.make);
-    await user.type(fields.model, newCar.model);
-
-    await user.click(fields.submit);
-
-    expect(onAdd).not.toHaveBeenCalled();
-    expect(await screen.findByText(/required/i)).toBeInTheDocument();
-  });
-
-  it("clears the fields after a successful submit", async () => {
-    const user = userEvent.setup();
-    const onAdd = vi.fn(async () => {});
-
-    render(<AddCarForm onAdd={onAdd} />);
+    renderForm(mocks);
 
     await fillForm(user, {
-      make: newCar.make,
-      model: newCar.model,
-      year: String(newCar.year),
-      color: newCar.color,
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
     });
 
-    await user.click(getFields().submit);
+    await user.click(getSubmitButton());
 
-    await waitFor(() => expect(onAdd).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(addCarResult).toHaveBeenCalledTimes(1));
+  });
+
+  it("reports the newly created car through onAdded", async () => {
+    const user = userEvent.setup();
+    const onAdded = vi.fn();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: { data: { addCar: huayra } },
+      },
+    ];
+
+    renderForm(mocks, onAdded);
+
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
+
+    await user.click(getSubmitButton());
+
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
+    expect(onAdded.mock.calls[0]?.[0]).toMatchObject({
+      id: "982",
+      make: "Pagani",
+      model: "Huayra",
+      year: 2021,
+      color: "Carbon Blue",
+    });
+  });
+
+  it("shows the newly added car in the inventory list rendered alongside it, without a reload", async () => {
+    const user = userEvent.setup();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera] } },
+      },
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: { data: { addCar: huayra } },
+      },
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera, huayra] } },
+      },
+    ];
+
+    render(
+      <MockedProvider mocks={mocks}>
+        <>
+          <AddCarForm />
+          <CarList />
+        </>
+      </MockedProvider>
+    );
+
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2022 Rimac Nevera"]));
+    expect(screen.queryByAltText("2021 Pagani Huayra")).not.toBeInTheDocument();
+
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
+
+    await user.click(getSubmitButton());
+
+    expect(
+      await screen.findByAltText("2021 Pagani Huayra")
+    ).toBeInTheDocument();
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+    expect(screen.getByAltText("2022 Rimac Nevera")).toBeInTheDocument();
+    expect(screen.getByText(/Carbon Blue/)).toBeInTheDocument();
+  });
+
+  it("does not fire the mutation and surfaces validation feedback when required fields are empty", async () => {
+    const user = userEvent.setup();
+    const addCarResult = vi.fn(() => ({
+      data: { addCar: huayra },
+    }));
+    const onAdded = vi.fn();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: addCarResult,
+      },
+    ];
+
+    renderForm(mocks, onAdded);
+
+    await user.click(getSubmitButton());
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(
+      alerts.some((alert) => /required/i.test(alert.textContent ?? ""))
+    ).toBe(true);
+
+    expect(addCarResult).not.toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it("does not fire the mutation when only some required fields are filled in", async () => {
+    const user = userEvent.setup();
+    const addCarResult = vi.fn(() => ({
+      data: { addCar: huayra },
+    }));
+    const onAdded = vi.fn();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: addCarResult,
+      },
+    ];
+
+    renderForm(mocks, onAdded);
+
+    // Colour deliberately left blank.
+    await user.type(getMakeField(), "Pagani");
+    await user.type(getModelField(), "Huayra");
+    await user.clear(getYearField());
+    await user.type(getYearField(), "2021");
+
+    await user.click(getSubmitButton());
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(
+      alerts.some((alert) => /color|colour/i.test(alert.textContent ?? ""))
+    ).toBe(true);
+
+    expect(addCarResult).not.toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it("clears the validation feedback once the missing fields are supplied and submits", async () => {
+    const user = userEvent.setup();
+    const onAdded = vi.fn();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: { data: { addCar: huayra } },
+      },
+    ];
+
+    renderForm(mocks, onAdded);
+
+    await user.click(getSubmitButton());
+    expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
+
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
+
+    await user.click(getSubmitButton());
+
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen
+          .queryAllByRole("alert")
+          .some((alert) => /required/i.test(alert.textContent ?? ""))
+      ).toBe(false)
+    );
+  });
+
+  it("shows an error to the user when the mutation fails", async () => {
+    const user = userEvent.setup();
+    const onAdded = vi.fn();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        error: new Error("Failed to add car"),
+      },
+    ];
+
+    renderForm(mocks, onAdded);
+
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
+
+    await user.click(getSubmitButton());
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/make/i)).toHaveValue("");
+      const alerts = screen.getAllByRole("alert");
+      expect(
+        alerts.some((alert) => /failed to add car/i.test(alert.textContent ?? ""))
+      ).toBe(true);
     });
 
-    expect(screen.getByLabelText(/model/i)).toHaveValue("");
-    expect(screen.getByLabelText(/color/i)).toHaveValue("");
-
-    const year = screen.getByLabelText(/year/i) as HTMLInputElement;
-    expect(year.value).toBe("");
+    expect(onAdded).not.toHaveBeenCalled();
   });
 
-  it("keeps the entered values when onAdd rejects", async () => {
+  it("keeps the typed values available after a failed submission", async () => {
     const user = userEvent.setup();
-    const onAdd = vi.fn(async () => {
-      throw new Error("Stratos Zero rejected by the inventory");
-    });
 
-    render(<AddCarForm onAdd={onAdd} />);
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        error: new Error("Failed to add car"),
+      },
+    ];
+
+    renderForm(mocks);
 
     await fillForm(user, {
-      make: newCar.make,
-      model: newCar.model,
-      year: String(newCar.year),
-      color: newCar.color,
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
     });
 
-    await user.click(getFields().submit);
+    await user.click(getSubmitButton());
 
-    await waitFor(() => expect(onAdd).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      const alerts = screen.getAllByRole("alert");
+      expect(
+        alerts.some((alert) => /failed to add car/i.test(alert.textContent ?? ""))
+      ).toBe(true);
+    });
 
-    expect(screen.getByLabelText(/make/i)).toHaveValue("Bertone");
-    expect(screen.getByLabelText(/model/i)).toHaveValue("Stratos Zero");
-    expect(screen.getByLabelText(/color/i)).toHaveValue("Vermilion");
+    expect(getMakeField()).toHaveValue("Pagani");
+    expect(getModelField()).toHaveValue("Huayra");
+    expect(getYearField()).toHaveValue(2021);
+    expect(getColorField()).toHaveValue("Carbon Blue");
   });
 
-  it("disables the submit button while submitting", () => {
-    render(<AddCarForm onAdd={vi.fn(async () => {})} submitting={true} />);
+  it("renders its fields inside a form element", () => {
+    const { container } = renderForm([]);
 
-    expect(getFields().submit).toBeDisabled();
-  });
-
-  it("enables the submit button when not submitting", () => {
-    render(<AddCarForm onAdd={vi.fn(async () => {})} submitting={false} />);
-
-    expect(getFields().submit).toBeEnabled();
-  });
-
-  it("does not call onAdd on the initial render", () => {
-    const onAdd = vi.fn(async () => {});
-
-    render(<AddCarForm onAdd={onAdd} />);
-
-    expect(onAdd).not.toHaveBeenCalled();
+    const form = container.querySelector("form");
+    expect(form).not.toBeNull();
+    expect(
+      within(form as HTMLElement).getByRole("textbox", { name: /make/i })
+    ).toBeInTheDocument();
+    expect(
+      within(form as HTMLElement).getByRole("button", { name: /add car/i })
+    ).toBeInTheDocument();
   });
 });

@@ -13,12 +13,25 @@ looks like the rest of our products.
 
 Anyone browsing a large inventory needs to narrow it down. Give them a search
 box that filters the list by model as they type, and a way to sort what they see
-by year or by make.
+by year or by make. They also need to limit the list to a single model year, and
+the two filters have to work together: choosing a year and typing part of a
+model should leave only the cars matching both, and there should be an obvious
+way to clear back to everything.
+
+Keep the combined narrowing rules — the model search, the year filter and the
+sort order — together in their own reusable hook rather than repeating them
+inside each component, so there is one place to change how narrowing behaves.
 
 Salespeople also need to add a car that has just landed on the lot. Give them a
 form that captures make, model, year and color and submits it to the API as a
 mutation. Once it succeeds, the new car should show up in the gallery without a
 page reload.
+
+Sometimes a salesperson wants everything about one particular car. Selecting a
+car from the gallery should show its full record, and that record should be
+requested from the API for that single car by its id rather than reusing
+whatever the gallery already had in memory, so the detail view reflects the
+latest data even when the list behind it is stale.
 
 All of the GraphQL data fetching for the inventory should sit behind a single
 custom React hook rather than being spread across the components, so the UI

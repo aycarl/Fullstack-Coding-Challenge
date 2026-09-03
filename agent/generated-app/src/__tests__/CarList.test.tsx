@@ -1,104 +1,280 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MockedProvider } from "@apollo/client/testing";
+import type { MockedResponse } from "@apollo/client/testing";
+import { describe, it, expect, vi } from "vitest";
+import { GET_CARS } from "@/graphql/queries";
 import CarList from "@/components/CarList";
-import type { Car } from "@/types";
 
-// Fixtures are deliberately unlike every MSW-seeded record (see src/mocks/data.ts)
-// so the assertions below can only ever match the cars this test supplies.
-const cars: Car[] = [
+/**
+ * Fixtures deliberately use makes/models/years that do NOT appear in the seeded
+ * MSW data, so an assertion can never be satisfied by a seeded record.
+ */
+function makeCar(
+  id: string,
+  make: string,
+  model: string,
+  year: number,
+  color: string
+) {
+  const label = `${make} ${model}`;
+  return {
+    __typename: "Car" as const,
+    id,
+    make,
+    model,
+    year,
+    color,
+    mobile: `https://placehold.co/640x360?text=${encodeURIComponent(label)}+Mobile`,
+    tablet: `https://placehold.co/1023x576?text=${encodeURIComponent(label)}+Tablet`,
+    desktop: `https://placehold.co/1440x810?text=${encodeURIComponent(label)}+Desktop`,
+  };
+}
+
+const nevera = makeCar("951", "Rimac", "Nevera", 2022, "Midnight Purple");
+const jesko = makeCar("952", "Koenigsegg", "Jesko", 2023, "Ghost White");
+const huayra = makeCar("953", "Pagani", "Huayra", 2021, "Carbon Blue");
+const nevermore = makeCar("954", "Zenvo", "Nevermore", 2023, "Matte Bronze");
+
+const allCars = [nevera, jesko, huayra, nevermore];
+
+const successMocks: MockedResponse[] = [
   {
-    id: "911",
-    make: "Saab",
-    model: "Sonett",
-    year: 1967,
-    color: "Marigold",
-    mobile: "https://placehold.co/640x360?text=Saab+Sonett+Mobile",
-    tablet: "https://placehold.co/1023x576?text=Saab+Sonett+Tablet",
-    desktop: "https://placehold.co/1440x810?text=Saab+Sonett+Desktop",
-  },
-  {
-    id: "912",
-    make: "Lancia",
-    model: "Fulvia",
-    year: 1971,
-    color: "Chartreuse",
-    mobile: "https://placehold.co/640x360?text=Lancia+Fulvia+Mobile",
-    tablet: "https://placehold.co/1023x576?text=Lancia+Fulvia+Tablet",
-    desktop: "https://placehold.co/1440x810?text=Lancia+Fulvia+Desktop",
+    request: { query: GET_CARS },
+    result: { data: { cars: allCars } },
   },
 ];
 
+const failureMocks: MockedResponse[] = [
+  {
+    request: { query: GET_CARS },
+    error: new Error("Failed to load inventory"),
+  },
+];
+
+function renderList(
+  mocks: readonly MockedResponse[] = successMocks,
+  onSelectCar?: (id: string) => void
+) {
+  return render(
+    <MockedProvider mocks={[...mocks]}>
+      <CarList {...(onSelectCar ? { onSelectCar } : {})} />
+    </MockedProvider>
+  );
+}
+
+/**
+ * Each rendered card carries a fallback <img> whose alt is
+ * `${year} ${make} ${model}` (see CarCard), so the alt texts in DOM order are a
+ * faithful, ordered view of the rendered cards.
+ */
+function renderedCardLabels(): string[] {
+  return screen
+    .queryAllByAltText(/^\d{4} /)
+    .map((img) => img.getAttribute("alt") ?? "");
+}
+
+function renderedYears(): number[] {
+  return renderedCardLabels().map((label) => Number(label.split(" ")[0]));
+}
+
+function renderedMakes(): string[] {
+  return renderedCardLabels().map((label) => label.split(" ")[1] ?? "");
+}
+
+function renderedModels(): string[] {
+  return renderedCardLabels().map((label) =>
+    label.split(" ").slice(2).join(" ")
+  );
+}
+
+function getSearchBox(): HTMLElement {
+  return screen.getByRole("textbox", { name: /search/i });
+}
+
+function getYearSelect(): HTMLElement {
+  return screen.getByRole("combobox", { name: /year/i });
+}
+
+function getSortSelect(): HTMLElement {
+  return screen.getByRole("combobox", { name: /sort/i });
+}
+
+async function chooseOption(
+  user: ReturnType<typeof userEvent.setup>,
+  combobox: HTMLElement,
+  name: RegExp | string
+) {
+  await user.click(combobox);
+  const listbox = await screen.findByRole("listbox");
+  await user.click(within(listbox).getByRole("option", { name }));
+  await waitFor(() =>
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
+  );
+}
+
+async function waitForCards(count: number) {
+  await waitFor(() => expect(renderedCardLabels()).toHaveLength(count));
+}
+
 describe("CarList", () => {
-  it("renders one card per car with year, make, model and color", () => {
-    render(<CarList cars={cars} loading={false} />);
-
-    // One accessible image per car card.
-    expect(screen.getByRole("img", { name: /saab\s+sonett/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /lancia\s+fulvia/i })
-    ).toBeInTheDocument();
-    expect(screen.getAllByRole("img")).toHaveLength(cars.length);
-
-    expect(screen.getByText(/1967/)).toBeInTheDocument();
-    expect(screen.getByText(/Saab/)).toBeInTheDocument();
-    expect(screen.getByText(/Sonett/)).toBeInTheDocument();
-    expect(screen.getByText(/Marigold/)).toBeInTheDocument();
-
-    expect(screen.getByText(/1971/)).toBeInTheDocument();
-    expect(screen.getByText(/Lancia/)).toBeInTheDocument();
-    expect(screen.getByText(/Fulvia/)).toBeInTheDocument();
-    expect(screen.getByText(/Chartreuse/)).toBeInTheDocument();
-  });
-
-  it("shows a progress indicator while loading", () => {
-    render(<CarList cars={[]} loading={true} />);
+  it("shows a loading indicator before the cars arrive", async () => {
+    renderList();
 
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
+    expect(renderedCardLabels()).toHaveLength(0);
 
-  it("does not show a progress indicator once loading has finished", () => {
-    render(<CarList cars={cars} loading={false} />);
-
+    await waitForCards(allCars.length);
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("shows an alert containing the error message when error is given", () => {
-    const error = new Error("Sonett inventory feed unavailable");
+  it("renders one card per car returned by the API", async () => {
+    renderList();
 
-    render(<CarList cars={[]} loading={false} error={error} />);
+    await waitForCards(4);
 
-    const alert = screen.getByRole("alert");
-    expect(alert).toBeInTheDocument();
-    expect(alert).toHaveTextContent("Sonett inventory feed unavailable");
+    expect(renderedModels().sort()).toEqual([
+      "Huayra",
+      "Jesko",
+      "Nevera",
+      "Nevermore",
+    ]);
+    expect(screen.getByText(/Midnight Purple/)).toBeInTheDocument();
+    expect(screen.getByText(/Ghost White/)).toBeInTheDocument();
+    expect(screen.getByText(/Carbon Blue/)).toBeInTheDocument();
+    expect(screen.getByText(/Matte Bronze/)).toBeInTheDocument();
+  });
 
+  it("shows an error message when the cars query fails", async () => {
+    renderList(failureMocks);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/failed to load inventory/i);
+    expect(renderedCardLabels()).toHaveLength(0);
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("prefers the error alert over rendering car cards", () => {
-    const error = new Error("Fulvia lookup exploded");
+  it("narrows the visible cards as a model is typed into the search box", async () => {
+    const user = userEvent.setup();
+    renderList();
 
-    render(<CarList cars={cars} loading={false} error={error} />);
+    await waitForCards(4);
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Fulvia lookup exploded"
+    await user.type(getSearchBox(), "neve");
+
+    await waitFor(() =>
+      expect(renderedModels().sort()).toEqual(["Nevera", "Nevermore"])
     );
+    expect(screen.queryByAltText("2021 Pagani Huayra")).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("img", { name: /lancia\s+fulvia/i })
+      screen.queryByAltText("2023 Koenigsegg Jesko")
     ).not.toBeInTheDocument();
+
+    await user.clear(getSearchBox());
+    await user.type(getSearchBox(), "huayra");
+
+    await waitFor(() => expect(renderedModels()).toEqual(["Huayra"]));
   });
 
-  it("shows an empty-state message when cars is empty and not loading", () => {
-    render(<CarList cars={[]} loading={false} />);
+  it("narrows the visible cards to the picked year", async () => {
+    const user = userEvent.setup();
+    renderList();
 
-    expect(screen.getByText(/no cars/i)).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitForCards(4);
+
+    await chooseOption(user, getYearSelect(), "2023");
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+    expect(renderedYears()).toEqual([2023, 2023]);
+    expect(renderedModels().sort()).toEqual(["Jesko", "Nevermore"]);
   });
 
-  it("does not show the empty-state message when cars are present", () => {
-    render(<CarList cars={cars} loading={false} />);
+  it("combines a year and a partial model so only cars matching both remain", async () => {
+    const user = userEvent.setup();
+    renderList();
 
-    expect(screen.queryByText(/no cars/i)).not.toBeInTheDocument();
+    await waitForCards(4);
+
+    await user.type(getSearchBox(), "neve");
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+
+    await chooseOption(user, getYearSelect(), "2023");
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(1));
+    expect(renderedCardLabels()).toEqual(["2023 Zenvo Nevermore"]);
+  });
+
+  it("restores every card when the filters are cleared", async () => {
+    const user = userEvent.setup();
+    renderList();
+
+    await waitForCards(4);
+
+    await user.type(getSearchBox(), "neve");
+    await chooseOption(user, getYearSelect(), "2023");
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(1));
+
+    await user.click(screen.getByRole("button", { name: /clear/i }));
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(4));
+    expect(getSearchBox()).toHaveValue("");
+    expect(renderedModels().sort()).toEqual([
+      "Huayra",
+      "Jesko",
+      "Nevera",
+      "Nevermore",
+    ]);
+  });
+
+  it("reorders the rendered cards when the sort field changes", async () => {
+    const user = userEvent.setup();
+    renderList();
+
+    await waitForCards(4);
+
+    await chooseOption(user, getSortSelect(), /make/i);
+
+    await waitFor(() =>
+      expect(renderedMakes()).toEqual([
+        "Koenigsegg",
+        "Pagani",
+        "Rimac",
+        "Zenvo",
+      ])
+    );
+
+    await chooseOption(user, getSortSelect(), /year/i);
+
+    await waitFor(() => expect(renderedYears()).toEqual([2021, 2022, 2023, 2023]));
+  });
+
+  it("calls onSelectCar with the id of the selected car", async () => {
+    const user = userEvent.setup();
+    const onSelectCar = vi.fn();
+
+    renderList(successMocks, onSelectCar);
+
+    await waitForCards(4);
+
+    await user.click(screen.getByText(/Jesko/));
+
+    expect(onSelectCar).toHaveBeenCalledTimes(1);
+    expect(onSelectCar).toHaveBeenCalledWith("952");
+
+    await user.click(screen.getByText(/Huayra/));
+
+    expect(onSelectCar).toHaveBeenCalledTimes(2);
+    expect(onSelectCar).toHaveBeenLastCalledWith("953");
+  });
+
+  it("does not throw when a card is selected without an onSelectCar handler", async () => {
+    const user = userEvent.setup();
+    renderList();
+
+    await waitForCards(4);
+
+    await user.click(screen.getByText(/Nevermore/));
+
+    expect(renderedCardLabels()).toHaveLength(4);
   });
 });

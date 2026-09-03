@@ -3,419 +3,319 @@ import userEvent from "@testing-library/user-event";
 import { MockedProvider } from "@apollo/client/testing";
 import type { MockedResponse } from "@apollo/client/testing";
 import { describe, it, expect } from "vitest";
-import { GET_CARS, ADD_CAR } from "@/graphql/queries";
+import { GET_CARS, GET_CAR, ADD_CAR } from "@/graphql/queries";
 import App from "@/App";
 
 /**
- * Integration contract under test:
- *
- *   import App from "@/App";
- *
- * `App` composes the generated pieces:
- *   - `useCars()`            — reads `GET_CARS`, exposes `addCar` backed by `ADD_CAR`
- *   - `CarFilters`           — a textbox named /search/i and a combobox named /sort/i
- *                              offering "Year" and "Make"
- *   - `filterAndSortCars`    — model substring filter, ascending year / alphabetical make
- *   - `CarList` / `CarCard`  — one <picture> + <img alt="{make} {model}"> per car
- *   - `AddCarForm`           — labelled make / model / year / color fields + submit button
- *
- * The whole journey is exercised against a single mounted tree: the test never
- * re-renders or re-mounts `App` after the initial render.
+ * Fixtures deliberately use makes/models/years/colors that do NOT appear in the
+ * seeded MSW data, so an assertion can never be satisfied by a seeded record.
  */
-
-// ---------------------------------------------------------------------------
-// Fixtures
-//
-// Deliberately unlike every MSW-seeded record (see src/mocks/data.ts) so the
-// assertions below can only ever match the cars this test supplies. Years and
-// makes are chosen so that "sort by year" and "sort by make" produce visibly
-// different orderings.
-// ---------------------------------------------------------------------------
-
-const sonett = {
-  __typename: "Car" as const,
-  id: "931",
-  make: "Saab",
-  model: "Sonett",
-  year: 1967,
-  color: "Marigold",
-  mobile: "https://placehold.co/640x360?text=Saab+Sonett+Mobile",
-  tablet: "https://placehold.co/1023x576?text=Saab+Sonett+Tablet",
-  desktop: "https://placehold.co/1440x810?text=Saab+Sonett+Desktop",
-};
-
-const fulvia = {
-  __typename: "Car" as const,
-  id: "932",
-  make: "Lancia",
-  model: "Fulvia",
-  year: 1971,
-  color: "Chartreuse",
-  mobile: "https://placehold.co/640x360?text=Lancia+Fulvia+Mobile",
-  tablet: "https://placehold.co/1023x576?text=Lancia+Fulvia+Tablet",
-  desktop: "https://placehold.co/1440x810?text=Lancia+Fulvia+Desktop",
-};
-
-const isetta = {
-  __typename: "Car" as const,
-  id: "933",
-  make: "Iso",
-  model: "Isetta",
-  year: 1955,
-  color: "Cerulean",
-  mobile: "https://placehold.co/640x360?text=Iso+Isetta+Mobile",
-  tablet: "https://placehold.co/1023x576?text=Iso+Isetta+Tablet",
-  desktop: "https://placehold.co/1440x810?text=Iso+Isetta+Desktop",
-};
-
-const seededCars = [sonett, fulvia, isetta];
-
-/**
- * The car the test itself creates. Its make, model, year and colour differ
- * from every seeded record above and from every MSW-seeded record, so an
- * assertion about it cannot accidentally match a car that was already there.
- */
-const newCarInput = {
-  make: "DeLorean",
-  model: "DMC-12",
-  year: 1981,
-  color: "Stainless",
-};
-
-const createdCar = {
-  __typename: "Car" as const,
-  id: "934",
-  ...newCarInput,
-  mobile: "https://placehold.co/640x360?text=DeLorean+DMC-12+Mobile",
-  tablet: "https://placehold.co/1023x576?text=DeLorean+DMC-12+Tablet",
-  desktop: "https://placehold.co/1440x810?text=DeLorean+DMC-12+Desktop",
-};
-
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-function getCarsMock(cars: readonly unknown[] = seededCars): MockedResponse {
+function makeCar(
+  id: string,
+  make: string,
+  model: string,
+  year: number,
+  color: string
+) {
+  const label = `${make} ${model}`;
   return {
-    request: { query: GET_CARS },
-    result: { data: { cars: [...cars] } },
+    __typename: "Car" as const,
+    id,
+    make,
+    model,
+    year,
+    color,
+    mobile: `https://placehold.co/640x360?text=${encodeURIComponent(label)}+Mobile`,
+    tablet: `https://placehold.co/1023x576?text=${encodeURIComponent(label)}+Tablet`,
+    desktop: `https://placehold.co/1440x810?text=${encodeURIComponent(label)}+Desktop`,
   };
 }
 
-function addCarMock(): MockedResponse {
-  return {
-    request: { query: ADD_CAR, variables: { ...newCarInput } },
-    result: { data: { addCar: createdCar } },
-  };
+const nevera = makeCar("991", "Rimac", "Nevera", 2022, "Midnight Purple");
+const jesko = makeCar("992", "Koenigsegg", "Jesko", 2023, "Ghost White");
+const huayra = makeCar("993", "Pagani", "Huayra", 2021, "Carbon Blue");
+
+const ADD_HUAYRA_VARIABLES = {
+  make: "Pagani",
+  model: "Huayra",
+  year: 2021,
+  color: "Carbon Blue",
+};
+
+/**
+ * Each rendered card carries a fallback <img> whose alt is
+ * `${year} ${make} ${model}` (see CarCard), so the alt texts in DOM order are a
+ * faithful, ordered view of the rendered inventory cards.
+ */
+function renderedCardLabels(): string[] {
+  return screen
+    .queryAllByAltText(/^\d{4} /)
+    .map((img) => img.getAttribute("alt") ?? "");
 }
 
 function renderApp(mocks: readonly MockedResponse[]) {
   return render(
-    <MockedProvider mocks={[...mocks]} addTypename={true}>
+    <MockedProvider mocks={[...mocks]}>
       <App />
     </MockedProvider>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
-
-const MODELS = ["Sonett", "Fulvia", "Isetta", "DMC-12"];
-
-/** Every rendered car card, in DOM order, reduced to its model name. */
-function visibleModels(): string[] {
-  return screen.queryAllByRole("img").map((img) => {
-    const alt = (img.getAttribute("alt") ?? "").trim();
-    return (
-      MODELS.find((model) =>
-        alt.toLowerCase().includes(model.toLowerCase())
-      ) ?? alt
-    );
-  });
+function getMakeField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /make/i });
 }
 
-function cardCount(): number {
-  return screen.queryAllByRole("img").length;
+function getModelField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /model/i });
 }
 
-function getSearchBox(): HTMLElement {
-  return screen.getByRole("textbox", { name: /search/i });
+function getYearField(): HTMLElement {
+  return screen.getByRole("spinbutton", { name: /year/i });
+}
+
+function getColorField(): HTMLElement {
+  return screen.getByRole("textbox", { name: /color/i });
+}
+
+function getSubmitButton(): HTMLElement {
+  return screen.getByRole("button", { name: /add car/i });
+}
+
+async function fillForm(
+  user: ReturnType<typeof userEvent.setup>,
+  values: { make: string; model: string; year: string; color: string }
+) {
+  await user.clear(getMakeField());
+  await user.type(getMakeField(), values.make);
+  await user.clear(getModelField());
+  await user.type(getModelField(), values.model);
+  await user.clear(getYearField());
+  await user.type(getYearField(), values.year);
+  await user.clear(getColorField());
+  await user.type(getColorField(), values.color);
 }
 
 /**
- * The add-car form. Field queries are scoped to it because the gallery's sort
- * control also offers a "Year" option, so an unscoped query risks ambiguity.
+ * The add-car form may live behind a disclosure control (e.g. an "Add car"
+ * toggle) rather than being rendered inline. Open it if a form is not already
+ * on screen.
  */
-function formScope() {
-  const form = document.querySelector("form");
-  return within((form as HTMLElement | null) ?? document.body);
-}
-
-async function chooseSort(
+async function openAddCarForm(
   user: ReturnType<typeof userEvent.setup>,
-  optionName: RegExp
+  container: HTMLElement
 ) {
-  await user.click(screen.getByRole("combobox", { name: /sort/i }));
-  const listbox = await screen.findByRole("listbox");
-  await user.click(within(listbox).getByRole("option", { name: optionName }));
-  await waitFor(() =>
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
-  );
+  if (container.querySelector("form")) return;
+
+  const entryPoints = screen
+    .getAllByRole("button", { name: /add (a )?car/i })
+    .filter((button) => button.getAttribute("type") !== "submit");
+
+  const entry = entryPoints[0];
+  expect(entry).toBeDefined();
+  await user.click(entry as HTMLElement);
+
+  await waitFor(() => expect(container.querySelector("form")).not.toBeNull());
 }
 
-async function waitForGallery(expected = seededCars.length) {
-  await screen.findByRole("img", { name: /saab\s+sonett/i });
-  await waitFor(() => expect(cardCount()).toBe(expected));
-}
+const galleryMocks: MockedResponse[] = [
+  {
+    request: { query: GET_CARS },
+    result: { data: { cars: [nevera, jesko] } },
+  },
+];
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+describe("App", () => {
+  it("shows the gallery of inventory cards by default", async () => {
+    renderApp(galleryMocks);
 
-describe("App integration", () => {
-  it("shows a progress indicator while the inventory loads", () => {
-    renderApp([getCarsMock()]);
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
 
-    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(renderedCardLabels().sort()).toEqual([
+      "2022 Rimac Nevera",
+      "2023 Koenigsegg Jesko",
+    ]);
+    expect(screen.getByText(/Midnight Purple/)).toBeInTheDocument();
+    expect(screen.getByText(/Ghost White/)).toBeInTheDocument();
   });
 
-  it("lists every car returned by GET_CARS in the gallery", async () => {
-    renderApp([getCarsMock()]);
+  it("shows the add-car form entry point alongside the gallery", async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp(galleryMocks);
 
-    await waitForGallery();
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
 
-    expect(
-      screen.getByRole("img", { name: /saab\s+sonett/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /lancia\s+fulvia/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /iso\s+isetta/i })
-    ).toBeInTheDocument();
+    await openAddCarForm(user, container);
 
-    expect(screen.getByText(/Sonett/)).toBeInTheDocument();
-    expect(screen.getByText(/Marigold/)).toBeInTheDocument();
-    expect(screen.getByText(/1967/)).toBeInTheDocument();
-
-    expect(screen.getByText(/Fulvia/)).toBeInTheDocument();
-    expect(screen.getByText(/Chartreuse/)).toBeInTheDocument();
-
-    expect(screen.getByText(/Isetta/)).toBeInTheDocument();
-    expect(screen.getByText(/Cerulean/)).toBeInTheDocument();
-
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(getMakeField()).toBeInTheDocument();
+    expect(getModelField()).toBeInTheDocument();
+    expect(getYearField()).toBeInTheDocument();
+    expect(getColorField()).toBeInTheDocument();
+    expect(getSubmitButton()).toBeInTheDocument();
   });
 
-  it("surfaces an error alert when the inventory query fails", async () => {
-    renderApp([
+  it("switches to the full record fetched by id when a car is selected from the gallery", async () => {
+    const user = userEvent.setup();
+
+    const mocks: MockedResponse[] = [
       {
         request: { query: GET_CARS },
-        error: new Error("Sonett inventory feed unavailable"),
+        result: { data: { cars: [nevera, jesko] } },
       },
+      {
+        request: { query: GET_CAR, variables: { id: "992" } },
+        result: { data: { car: jesko } },
+      },
+    ];
+
+    renderApp(mocks);
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+
+    await user.click(screen.getByText(/Jesko/));
+
+    // The gallery is replaced by the single record.
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2023 Koenigsegg Jesko"]));
+
+    expect(screen.getByText(/Koenigsegg/)).toBeInTheDocument();
+    expect(screen.getByText(/Ghost White/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nevera/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Midnight Purple/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
+  });
+
+  it("returns to the gallery when the back control is activated", async () => {
+    const user = userEvent.setup();
+
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera, jesko] } },
+      },
+      {
+        request: { query: GET_CAR, variables: { id: "991" } },
+        result: { data: { car: nevera } },
+      },
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera, jesko] } },
+      },
+    ];
+
+    const { container } = renderApp(mocks);
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+
+    await user.click(screen.getByText(/Nevera/));
+
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2022 Rimac Nevera"]));
+    expect(screen.queryByText(/Jesko/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+    expect(renderedCardLabels().sort()).toEqual([
+      "2022 Rimac Nevera",
+      "2023 Koenigsegg Jesko",
     ]);
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/Sonett inventory feed unavailable/i);
-    expect(screen.queryAllByRole("img")).toHaveLength(0);
-  });
-
-  it("narrows the visible cards to the matching model as the user types in the search box", async () => {
-    const user = userEvent.setup();
-    renderApp([getCarsMock()]);
-
-    await waitForGallery();
-
-    await user.type(getSearchBox(), "Fulvia");
-
-    await waitFor(() => expect(cardCount()).toBe(1));
-
-    expect(getSearchBox()).toHaveValue("Fulvia");
-    expect(visibleModels()).toEqual(["Fulvia"]);
     expect(
-      screen.getByRole("img", { name: /lancia\s+fulvia/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("img", { name: /saab\s+sonett/i })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("img", { name: /iso\s+isetta/i })
+      screen.queryByRole("button", { name: /back/i })
     ).not.toBeInTheDocument();
 
-    await user.clear(getSearchBox());
-
-    await waitFor(() => expect(cardCount()).toBe(seededCars.length));
+    // The add-car entry point is available again on the gallery view.
+    await openAddCarForm(user, container);
+    expect(getSubmitButton()).toBeInTheDocument();
   });
 
-  it("matches the search text case-insensitively against the model", async () => {
+  it("adds a car through the form and shows it in the gallery without a reload", async () => {
     const user = userEvent.setup();
-    renderApp([getCarsMock()]);
 
-    await waitForGallery();
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera] } },
+      },
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: { data: { addCar: huayra } },
+      },
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera, huayra] } },
+      },
+    ];
 
-    await user.type(getSearchBox(), "sonett");
+    const { container } = renderApp(mocks);
 
-    await waitFor(() => expect(visibleModels()).toEqual(["Sonett"]));
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2022 Rimac Nevera"]));
+    expect(screen.queryByAltText("2021 Pagani Huayra")).not.toBeInTheDocument();
 
-    await user.clear(getSearchBox());
-    await user.type(getSearchBox(), "SETT");
+    await openAddCarForm(user, container);
 
-    await waitFor(() => expect(visibleModels()).toEqual(["Isetta"]));
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
+
+    await user.click(getSubmitButton());
+
+    expect(await screen.findByAltText("2021 Pagani Huayra")).toBeInTheDocument();
+    await waitFor(() => expect(renderedCardLabels()).toHaveLength(2));
+    expect(screen.getByAltText("2022 Rimac Nevera")).toBeInTheDocument();
+    expect(screen.getByText(/Carbon Blue/)).toBeInTheDocument();
   });
 
-  it("reorders the visible cards by year and by make when the sort control changes", async () => {
+  it("can open the record of a car that was just added through the form", async () => {
     const user = userEvent.setup();
-    renderApp([getCarsMock()]);
 
-    await waitForGallery();
+    const mocks: MockedResponse[] = [
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera] } },
+      },
+      {
+        request: { query: ADD_CAR, variables: ADD_HUAYRA_VARIABLES },
+        result: { data: { addCar: huayra } },
+      },
+      {
+        request: { query: GET_CARS },
+        result: { data: { cars: [nevera, huayra] } },
+      },
+      {
+        request: { query: GET_CAR, variables: { id: "993" } },
+        result: { data: { car: huayra } },
+      },
+    ];
 
-    await chooseSort(user, /^year$/i);
+    const { container } = renderApp(mocks);
 
-    await waitFor(() =>
-      expect(visibleModels()).toEqual(["Isetta", "Sonett", "Fulvia"])
-    );
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2022 Rimac Nevera"]));
 
-    await chooseSort(user, /^make$/i);
+    await openAddCarForm(user, container);
 
-    await waitFor(() =>
-      expect(visibleModels()).toEqual(["Isetta", "Fulvia", "Sonett"])
-    );
+    await fillForm(user, {
+      make: "Pagani",
+      model: "Huayra",
+      year: "2021",
+      color: "Carbon Blue",
+    });
 
-    expect(cardCount()).toBe(seededCars.length);
+    await user.click(getSubmitButton());
+
+    expect(await screen.findByAltText("2021 Pagani Huayra")).toBeInTheDocument();
+
+    await user.click(screen.getByText(/Huayra/));
+
+    await waitFor(() => expect(renderedCardLabels()).toEqual(["2021 Pagani Huayra"]));
+    expect(screen.queryByText(/Nevera/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back/i })).toBeInTheDocument();
   });
 
-  it("sorts the filtered subset rather than the whole inventory", async () => {
-    const user = userEvent.setup();
-    renderApp([getCarsMock()]);
+  it("renders the application heading on the gallery view", async () => {
+    renderApp(galleryMocks);
 
-    await waitForGallery();
-
-    await chooseSort(user, /^year$/i);
-    await user.type(getSearchBox(), "ett");
-
-    await waitFor(() => expect(visibleModels()).toEqual(["Isetta", "Sonett"]));
-  });
-
-  it("adds a car through the form and shows it in the gallery without any re-render by the test", async () => {
-    const user = userEvent.setup();
-
-    renderApp([
-      getCarsMock(),
-      addCarMock(),
-      // Only used if the implementation refreshes the list via refetch;
-      // ignored when the Apollo cache is updated directly.
-      getCarsMock([...seededCars, createdCar]),
-    ]);
-
-    await waitForGallery();
-
-    expect(
-      screen.queryByRole("img", { name: /delorean\s+dmc-12/i })
-    ).not.toBeInTheDocument();
-
-    // Captured before the mutation: if the tree were remounted, this node
-    // would be replaced rather than reused.
-    const searchBoxBefore = getSearchBox();
-
-    const form = formScope();
-
-    await user.type(form.getByLabelText(/make/i), newCarInput.make);
-    await user.type(form.getByLabelText(/model/i), newCarInput.model);
-    await user.clear(form.getByLabelText(/year/i));
-    await user.type(form.getByLabelText(/year/i), String(newCarInput.year));
-    await user.type(form.getByLabelText(/color/i), newCarInput.color);
-
-    await user.click(
-      form.getByRole("button", { name: /add|submit|save|create/i })
-    );
-
-    expect(
-      await screen.findByRole("img", { name: /delorean\s+dmc-12/i })
-    ).toBeInTheDocument();
-
-    await waitFor(() => expect(cardCount()).toBe(seededCars.length + 1));
-
-    expect(screen.getByText(/DMC-12/)).toBeInTheDocument();
-    expect(screen.getByText(/Stainless/)).toBeInTheDocument();
-    expect(screen.getByText(/1981/)).toBeInTheDocument();
-
-    // The seeded cars are still present alongside the newly created one.
-    expect(
-      screen.getByRole("img", { name: /saab\s+sonett/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /lancia\s+fulvia/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /iso\s+isetta/i })
-    ).toBeInTheDocument();
-
-    // Same DOM node => the app was never re-rendered or remounted by the test.
-    expect(getSearchBox()).toBe(searchBoxBefore);
-
-    // The form resets after a successful submit.
-    await waitFor(() =>
-      expect(formScope().getByLabelText(/make/i)).toHaveValue("")
-    );
-    expect(formScope().getByLabelText(/model/i)).toHaveValue("");
-    expect(formScope().getByLabelText(/color/i)).toHaveValue("");
-
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("keeps the newly added car searchable and sortable in the same mounted tree", async () => {
-    const user = userEvent.setup();
-
-    renderApp([
-      getCarsMock(),
-      addCarMock(),
-      getCarsMock([...seededCars, createdCar]),
-    ]);
-
-    await waitForGallery();
-
-    const form = formScope();
-    await user.type(form.getByLabelText(/make/i), newCarInput.make);
-    await user.type(form.getByLabelText(/model/i), newCarInput.model);
-    await user.clear(form.getByLabelText(/year/i));
-    await user.type(form.getByLabelText(/year/i), String(newCarInput.year));
-    await user.type(form.getByLabelText(/color/i), newCarInput.color);
-    await user.click(
-      form.getByRole("button", { name: /add|submit|save|create/i })
-    );
-
-    await screen.findByRole("img", { name: /delorean\s+dmc-12/i });
-    await waitFor(() => expect(cardCount()).toBe(seededCars.length + 1));
-
-    await chooseSort(user, /^year$/i);
-
-    await waitFor(() =>
-      expect(visibleModels()).toEqual([
-        "Isetta",
-        "Sonett",
-        "Fulvia",
-        "DMC-12",
-      ])
-    );
-
-    await chooseSort(user, /^make$/i);
-
-    await waitFor(() =>
-      expect(visibleModels()).toEqual([
-        "DMC-12",
-        "Isetta",
-        "Fulvia",
-        "Sonett",
-      ])
-    );
-
-    await user.type(getSearchBox(), "dmc");
-
-    await waitFor(() => expect(visibleModels()).toEqual(["DMC-12"]));
-    expect(
-      screen.queryByRole("img", { name: /saab\s+sonett/i })
-    ).not.toBeInTheDocument();
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(within(heading).getByText(/car inventory/i)).toBeInTheDocument();
   });
 });
