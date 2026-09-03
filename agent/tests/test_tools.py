@@ -4,6 +4,7 @@
 target, so anything it can talk the model into must stay inside the run.
 """
 
+import os
 import subprocess
 
 import pytest
@@ -97,3 +98,46 @@ class TestValidationSuite:
         ok, output = run_npm_install(str(tmp_path))
         assert ok is False
         assert "ENOENT" in output
+
+
+class TestOutputLock:
+    """Generation begins by deleting the target, so two runs must not overlap."""
+
+    def test_creates_the_lock_beside_the_directory_not_inside_it(self, tmp_path):
+        out = tmp_path / "generated-app"
+        with tools.output_lock(out):
+            assert (tmp_path / "generated-app.lock").exists()
+
+    def test_releases_on_the_way_out(self, tmp_path):
+        out = tmp_path / "generated-app"
+        with tools.output_lock(out):
+            pass
+        assert not (tmp_path / "generated-app.lock").exists()
+
+    def test_releases_even_when_the_run_raises(self, tmp_path):
+        out = tmp_path / "generated-app"
+        with pytest.raises(RuntimeError):
+            with tools.output_lock(out):
+                raise RuntimeError("run blew up")
+        assert not (tmp_path / "generated-app.lock").exists()
+
+    def test_refuses_to_start_while_a_live_run_holds_it(self, tmp_path):
+        out = tmp_path / "generated-app"
+        with tools.output_lock(out):
+            with pytest.raises(SystemExit) as exc:
+                with tools.output_lock(out):
+                    pass
+        assert "already writing" in str(exc.value)
+
+    def test_reclaims_a_lock_left_by_a_dead_run(self, tmp_path):
+        """A crashed run must not block every later run forever."""
+        out = tmp_path / "generated-app"
+        (tmp_path / "generated-app.lock").write_text("999999 2026-01-01T00:00:00\n")
+        with tools.output_lock(out):
+            assert (tmp_path / "generated-app.lock").read_text().split()[0] == str(os.getpid())
+
+    def test_reclaims_a_corrupt_lock(self, tmp_path):
+        out = tmp_path / "generated-app"
+        (tmp_path / "generated-app.lock").write_text("not-a-pid")
+        with tools.output_lock(out):
+            assert (tmp_path / "generated-app.lock").exists()

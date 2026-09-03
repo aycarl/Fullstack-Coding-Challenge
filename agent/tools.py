@@ -1,5 +1,58 @@
+import os
 import subprocess
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
+
+
+def _holder_is_running(pid: int) -> bool:
+    """Whether the process that wrote a lock still exists."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+@contextmanager
+def output_lock(output_dir: Path):
+    """Hold exclusive claim on an output directory for the length of a run.
+
+    Generation starts by deleting the target, so two concurrent runs silently
+    destroy each other's work — one collision cost a run mid-validation. The
+    lock sits beside the directory rather than inside it, because the directory
+    itself is about to be removed. A lock left behind by a crashed run is
+    reclaimed rather than blocking every later run forever.
+    """
+    lock = output_dir.with_name(output_dir.name + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+
+    for reclaimed in (False, True):
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            try:
+                holder = int(lock.read_text().split()[0])
+            except (OSError, ValueError, IndexError):
+                holder = None
+            if holder is not None and _holder_is_running(holder):
+                raise SystemExit(
+                    f"another run (pid {holder}) is already writing to {output_dir}.\n"
+                    f"Wait for it to finish, or delete {lock} if you know it is stale."
+                )
+            if reclaimed:
+                raise SystemExit(f"could not acquire {lock}")
+            lock.unlink(missing_ok=True)
+
+    os.write(fd, f"{os.getpid()} {datetime.now().isoformat(timespec='seconds')}\n".encode())
+    os.close(fd)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def resolve_project_path(target_dir: str, rel_path: str) -> Path | None:

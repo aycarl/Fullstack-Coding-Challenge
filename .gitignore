@@ -30,6 +30,9 @@ venv/
 agent/logs/*
 !agent/logs/sample-run.txt
 
+# Run lock, written beside the output directory while a run holds it.
+agent/*.lock
+
 # --- OS / editor cruft ---
 *.local
 .DS_Store

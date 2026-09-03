@@ -11,6 +11,7 @@ console = Console()
 from config import MODEL_ID, estimate_cost
 from graph import build_graph
 from reporting import RunLog
+from tools import output_lock
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Frontend Code Generator")
@@ -26,64 +27,67 @@ def main():
     src = Path(args.boilerplate).resolve()
     dst = Path(args.output).resolve()
 
-    log = RunLog(
-        console,
-        Path(__file__).parent / "logs",
-        {
-            "model": MODEL_ID,
-            "spec": str(Path(args.spec).resolve()),
-            "output": str(dst),
-        },
-    )
+    if dst == src or dst == Path.cwd().resolve():
+        raise SystemExit(f"refusing to delete {dst}")
 
-    try:
-        log.section("Agentic Code Generation Pipeline")
-
-        if dst == src or dst == Path.cwd().resolve():
-            raise SystemExit(f"refusing to delete {dst}")
-
-        if dst.exists():
-            shutil.rmtree(dst)
-
-        shutil.copytree(
-            src, dst,
-            ignore=shutil.ignore_patterns(
-                "node_modules", ".git", "agent", dst.name, "dist", ".env",
-                # Repo-level files that are not part of the app being generated.
-                "Makefile", "docs", "README.md", "CHALLENGE.md", ".gitignore",
-            ),
+    # Claimed before the log is opened, so a run that is refused for holding no
+    # claim on the directory does not leave an empty log behind.
+    with output_lock(dst):
+        log = RunLog(
+            console,
+            Path(__file__).parent / "logs",
+            {
+                "model": MODEL_ID,
+                "spec": str(Path(args.spec).resolve()),
+                "output": str(dst),
+            },
         )
-        log.event(f"[green]OK[/green] Boilerplate prepared in [bold]{args.output}[/bold]")
+        try:
+            log.section("Agentic Code Generation Pipeline")
+            _generate(args, src, dst, log)
+        finally:
+            log.close()
 
-        spec_text = Path(args.spec).read_text(encoding="utf-8")
 
-        app = build_graph()
-        initial_state = {
-            "spec": spec_text,
-            "target_dir": str(dst),
-            "boilerplate_context": "",
-            "plan": [],
-            "feature_order": [],
-            "current_task_index": 0,
-            "validation_output": None,
-            "is_passing": False,
-            "retries": 0,
-            "max_retries": 3,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "generated_files": {},
-            "installed": False,
-            "last_patched_file": None,
-            "last_failure_signature": None,
-            "unhelpful_fixes": [],
-            "red_checked": False,
-            "red_is_failing": False,
-            "red_output": None
-        }
+def _generate(args, src: Path, dst: Path, log) -> None:
+    if dst.exists():
+        shutil.rmtree(dst)
 
-        _stream_run(app, initial_state, log, args.output)
-    finally:
-        log.close()
+    shutil.copytree(
+        src, dst,
+        ignore=shutil.ignore_patterns(
+            "node_modules", ".git", "agent", dst.name, "dist", ".env",
+            # Repo-level files that are not part of the app being generated.
+            "Makefile", "docs", "README.md", "CHALLENGE.md", ".gitignore",
+        ),
+    )
+    log.event(f"[green]OK[/green] Boilerplate prepared in [bold]{args.output}[/bold]")
+
+    app = build_graph()
+    initial_state = {
+        "spec": Path(args.spec).read_text(encoding="utf-8"),
+        "target_dir": str(dst),
+        "boilerplate_context": "",
+        "plan": [],
+        "feature_order": [],
+        "current_task_index": 0,
+        "validation_output": None,
+        "is_passing": False,
+        "retries": 0,
+        "max_retries": 3,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "generated_files": {},
+        "installed": False,
+        "last_patched_file": None,
+        "last_failure_signature": None,
+        "unhelpful_fixes": [],
+        "red_checked": False,
+        "red_is_failing": False,
+        "red_output": None,
+    }
+
+    _stream_run(app, initial_state, log, args.output)
 
 
 def _next_label(node_name, plan, idx, red_checked) -> str:
