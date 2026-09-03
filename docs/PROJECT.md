@@ -30,7 +30,7 @@ small enough to read in a single sitting.
 
 - No backend, database, container, auth, or CI/CD. MSW mocks the GraphQL API; nothing
   real sits behind it, and nothing needs to.
-- No general-purpose agent framework. The graph is five nodes and stays five nodes —
+- No general-purpose agent framework. The graph is six nodes and stays six nodes —
   abstraction at this size would cost more than it returns.
 - UI polish is not the target. Functional correctness against the spec is.
 - No spec-specific knowledge baked into the prompts. An agent that only works on the spec
@@ -170,7 +170,11 @@ Routing lives in `graph.py`: `route_coding` loops the coder while tasks remain;
 - **The status line names the next step, not the last** — `app.stream()` only yields once
   a node has finished, so reporting the completed node would leave the spinner describing
   finished work through the 30-60s call actually in flight.
-- **Model choice rationale:** `TBD` (Stage 5).
+- **`claude-opus-5` for every node** — the costly decisions here are planning and repair,
+  not code-writing: a plan that orders a component before the hook it imports fails in a
+  way no retry recovers, so paying for the call that decides beats paying for the retries
+  after a bad one. Not benchmarked against a cheaper model; `ANTHROPIC_MODEL` makes that
+  comparison a one-line change, and it is an admitted gap rather than a measured claim.
 
 ---
 

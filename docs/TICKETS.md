@@ -164,18 +164,18 @@ between tasks. The ordered task list is real and invisible. This stage makes it 
 
 ---
 
-## Stage 5 — Write-up · `TODO`
+## Stage 5 — Write-up · `DONE`
 
 `docs/WRITEUP.md`, distilled from `docs/PROJECT.md` — the short version, for someone
 deciding whether to read the source.
 
 **Acceptance criteria**
 
-- [ ] Which model, and the reasoning behind choosing it
-- [ ] Agent architecture, with a diagram
-- [ ] Measured cost per run, from real token counts (Stage 4), not an estimate
-- [ ] What worked well and what would improve with more time
-- [ ] The known limitation stated plainly: no final cross-file consistency pass
-- [ ] Someone who has never seen the repo can set it up from the write-up alone
+- [x] Which model, and the reasoning behind choosing it
+- [x] Agent architecture, with a diagram
+- [x] Measured cost per run, from real token counts (Stage 4), not an estimate
+- [x] What worked well and what would improve with more time
+- [x] The known limitation stated plainly: no final cross-file consistency pass
+- [x] Someone who has never seen the repo can set it up from the write-up alone
 
 **Commit:** `docs: add write-up with architecture, cost, and known limitations`
