@@ -19,6 +19,7 @@ make setup                                        # installs uv if missing, sync
 echo "ANTHROPIC_API_KEY=sk-ant-..." > agent/.env  # your key; nothing else is needed
 
 make generate                                     # ~9 min, ~$2.75 — writes agent/generated-app/
+make check                                        # the agent's own test suite
 make test                                         # typecheck + tests on what it built
 make dev                                          # http://localhost:5173
 ```
@@ -160,6 +161,7 @@ agent/                  the deliverable
   tools.py              file I/O and the shell-out validators
   config.py             model id and cost rates, env-overridable
   reporting.py          run logging
+  tests/                the agent's own test suite
   spec.txt              sample spec (default input)
   spec-alt.md           unrelated spec, for generalization
   generated-app/        committed sample output

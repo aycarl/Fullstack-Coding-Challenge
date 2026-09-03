@@ -11,3 +11,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "rich>=13.7.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# The agent modules are flat in this directory, not an installed package.
+pythonpath = ["."]
+testpaths = ["tests"]

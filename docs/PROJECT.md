@@ -84,6 +84,9 @@ Diagram in the [root README](../README.md#how-it-works). Routing lives in `graph
   sequence while each task still builds one file; execution stays phase-major.
 - **The run log is flushed per event** — the run worth logging is the one that dies at
   task 9, which an end-of-run writer would miss entirely.
+- **The agent's own tests cover its pure core** — routing, the path guard, cost
+  arithmetic, ordering and logging. Nothing mocks an LLM call: the parts worth testing are
+  the ones that decide, and those are all pure.
 - **Boilerplate is copied to a separate output directory** — every run starts clean, and
   `run.py` refuses to delete the CWD or the source.
 
@@ -98,7 +101,6 @@ Diagram in the [root README](../README.md#how-it-works). Routing lives in `graph
   whether the last one worked. `last_patched_file` is in state and unused for this.
 - **Concurrent runs corrupt each other.** Generation begins by deleting the output
   directory, and there is no lock.
-- **The agent has no tests of its own.**
 
 ## Measured Runs
 

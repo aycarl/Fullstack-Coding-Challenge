@@ -10,7 +10,7 @@ OUT   := $(AGENT)/generated-app
 SPEC  ?= spec.txt
 
 .DEFAULT_GOAL := help
-.PHONY: help setup generate test dev
+.PHONY: help setup check generate test dev
 
 help: ## List available targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -35,6 +35,9 @@ setup: ## Install uv if missing, sync the agent env, and check for an API key
 	@echo
 	@echo "Ready. Next:  make generate       (writes a fresh app from agent/spec.txt)"
 	@echo "         or:  make generate SPEC=spec-alt.md   (a different spec)"
+
+check: ## Run the agent's own test suite
+	cd $(AGENT) && uv run pytest -q
 
 generate: ## Run the agent to scaffold the app from SPEC (replaces previous output)
 	cd $(AGENT) && rm -rf generated-app && uv run run.py --spec $(SPEC) --output ./generated-app

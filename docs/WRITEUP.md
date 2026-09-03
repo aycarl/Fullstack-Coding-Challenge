@@ -85,6 +85,9 @@ the next call.
   `red_check` then proves the tests actually fail, so "test-first" isn't just a claim.
 - **Retrying only what's worth retrying.** A single 529 had previously aborted a 12-task
   run at task 9 and discarded everything before it.
+- **Testing the parts that decide.** 68 tests over routing, the path guard, ordering and
+  cost. Mutation-checked: reverting the retry off-by-one, the traversal guard, the phase
+  order or the asymmetric rate each fails a test.
 - **Prompting against observed failures.** Every negative constraint exists because a run
   failed that way — no no-op tasks, no domain nouns, no fixture colliding with seeded mocks.
 
@@ -94,11 +97,9 @@ the next call.
    rewriting one file without noticing the failure is unchanged. `last_patched_file` is
    already in state. Highest-value fix.
 2. **Select context instead of injecting all of it.** The manifest is quadratic.
-3. **Test the agent itself.** It holds generated code to a bar it doesn't meet — the
-   weakest part of this submission.
-4. **Lock the output directory.** Two concurrent runs silently corrupt each other; this
+3. **Lock the output directory.** Two concurrent runs silently corrupt each other; this
    cost a real run mid-validation during development.
-5. **Per-feature red/green slices.** Tasks carry a feature label but execute phase-major.
+4. **Per-feature red/green slices.** Tasks carry a feature label but execute phase-major.
 
 ---
 
