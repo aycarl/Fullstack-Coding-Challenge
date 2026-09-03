@@ -24,6 +24,12 @@ venv/
 # --- Agent run artifacts ---
 *.log
 
+# Run logs. One is committed as evidence of the task decomposition; the rest
+# are local noise. Must be logs/* and not logs/ — git cannot re-include a file
+# that sits inside an excluded directory, so a trailing slash kills the negation.
+agent/logs/*
+!agent/logs/sample-run.txt
+
 # --- OS / editor cruft ---
 *.local
 .DS_Store
