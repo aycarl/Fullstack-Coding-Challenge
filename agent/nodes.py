@@ -121,6 +121,14 @@ Order the tasks in three phases, tagging each task with its `phase`:
    the modules that compose them, finishing with integration into the
    application entry point.
 
+Label every task with the `feature` it serves: the user-facing capability from
+the specification that this file exists to deliver, named as a product owner would
+say it ("Car listing", "Search", "Add car form"), never as a layer ("hooks",
+"components", "tests"). Every task serving one capability carries the same label,
+so the plan reads as an ordered sequence of features even though each task builds
+one file. Introduce the features in the order a reader should meet them: the
+capability everything else depends on first.
+
 Each task covers exactly one file. Reuse the boilerplate's existing paths, import
 aliases and conventions, and prefer extending an existing file over creating a
 parallel one beside it. In each task description, state the exported API of that
@@ -141,6 +149,16 @@ Output ONLY the structured plan."""
     if plan_result is None:
         raise RuntimeError(f"planner returned no usable plan: {result['parsing_error']}")
 
+    # Normalize before anything groups by it: a blank label would otherwise
+    # render as a nameless feature of its own.
+    for task in plan_result.tasks:
+        task.feature = task.feature.strip() or "General"
+
+    # Read the feature order off the plan as the planner emitted it, before the
+    # sort below scatters each feature across the phases. Execution is
+    # phase-major; only the rendering is grouped by feature.
+    feature_order = list(dict.fromkeys(t.feature for t in plan_result.tasks))
+
     # Sort rather than trust: a test written after its implementation is not a
     # failing-test-first workflow, whatever the plan claims. Python's sort is
     # stable, so dependency order inside each phase is preserved.
@@ -149,6 +167,7 @@ Output ONLY the structured plan."""
     in_tok, out_tok = _usage(result["raw"])
     return {
         "plan": tasks,
+        "feature_order": feature_order,
         "current_task_index": 0,
         "input_tokens": state["input_tokens"] + in_tok,
         "output_tokens": state["output_tokens"] + out_tok,

@@ -5,6 +5,14 @@ from pydantic import BaseModel, Field, field_validator
 class FileTask(BaseModel):
     filepath: str = Field(description="Relative path to file")
     action: str = Field(description="'create' or 'modify'")
+    feature: str = Field(
+        default="",
+        description=(
+            "Short user-facing capability this file serves, drawn from the "
+            "specification, e.g. 'Car listing', 'Search', 'Add car form'. Every "
+            "task serving one capability carries the same label."
+        ),
+    )
     phase: Literal["scaffold", "test", "implementation"] = Field(
         description=(
             "'scaffold' for shared contracts the tests import, 'test' for a test "
@@ -44,6 +52,10 @@ class AgentState(TypedDict):
     target_dir: str
     boilerplate_context: str
     plan: List[FileTask]
+    # Feature labels in the order the planner introduced them, captured before
+    # the phase sort scatters them. Execution is phase-major; only the rendered
+    # plan is grouped by feature.
+    feature_order: List[str]
     current_task_index: int
     validation_output: Optional[str]
     is_passing: bool
