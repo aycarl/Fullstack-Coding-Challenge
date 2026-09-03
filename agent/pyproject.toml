@@ -1,7 +1,7 @@
 [project]
 name = "agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "CLI agent that generates a React frontend from a natural-language spec"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

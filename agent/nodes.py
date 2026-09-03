@@ -16,9 +16,7 @@ from tools import (
 llm = ChatAnthropic(model_name=MODEL_ID)
 
 
-# Files whose full contents the planner and coder need in order to honour the
-# boilerplate's contracts: the data shape, the API surface, the build and test
-# config, and the entry points they must integrate with.
+# Files the planner and coder need in full to honour the boilerplate's contracts.
 CONTRACT_FILES = [
     "package.json",
     "tsconfig.json",
@@ -31,10 +29,8 @@ CONTRACT_FILES = [
     "src/test-setup.ts",
     "src/main.tsx",
     "src/App.tsx",
-    # Shipped by the boilerplate as worked references for how to use Apollo with
-    # MUI, and how to test a component without going near the network. Without
-    # them the coder invents its own test harness: one run stood up a real
-    # ApolloClient over jsdom fetch and failed on an AbortSignal mismatch.
+    # Worked references. Without them the coder invents its own test harness:
+    # one run stood up a real ApolloClient over jsdom fetch and broke on it.
     "src/components/Example.tsx",
     "src/__tests__/Example.test.tsx",
 ]
@@ -47,10 +43,7 @@ PHASE_ORDER = {"scaffold": 0, "test": 1, "implementation": 2}
 
 
 def _usage(message) -> tuple[int, int]:
-    """Input and output tokens for one call, counted separately.
-
-    The two are priced differently, so a combined total cannot be costed.
-    """
+    """Input and output tokens for one call; the two are priced differently."""
     meta = getattr(message, "usage_metadata", None) or {}
     return meta.get("input_tokens", 0), meta.get("output_tokens", 0)
 
@@ -149,19 +142,15 @@ Output ONLY the structured plan."""
     if plan_result is None:
         raise RuntimeError(f"planner returned no usable plan: {result['parsing_error']}")
 
-    # Normalize before anything groups by it: a blank label would otherwise
-    # render as a nameless feature of its own.
+    # A blank label would render as a nameless feature of its own.
     for task in plan_result.tasks:
         task.feature = task.feature.strip() or "General"
 
-    # Read the feature order off the plan as the planner emitted it, before the
-    # sort below scatters each feature across the phases. Execution is
-    # phase-major; only the rendering is grouped by feature.
+    # Captured before the sort below scatters each feature across the phases.
     feature_order = list(dict.fromkeys(t.feature for t in plan_result.tasks))
 
-    # Sort rather than trust: a test written after its implementation is not a
-    # failing-test-first workflow, whatever the plan claims. Python's sort is
-    # stable, so dependency order inside each phase is preserved.
+    # Sort rather than trust: a test emitted after its implementation is not
+    # test-first. The sort is stable, so order within a phase is preserved.
     tasks = sorted(plan_result.tasks, key=lambda t: PHASE_ORDER.get(t.phase, 2))
 
     in_tok, out_tok = _usage(result["raw"])
@@ -174,9 +163,8 @@ Output ONLY the structured plan."""
     }
 
 
-# One worked example of the shape a generated module should take. Deliberately
-# in a domain the specification will never use, so it teaches structure —
-# typed result object, explicit exports — without seeding vocabulary.
+# Deliberately in a domain the specification will never use, so it teaches shape
+# without seeding vocabulary.
 HOOK_EXAMPLE = """// Example of the expected shape only. Not part of the app being built.
 import { useQuery } from "@apollo/client";
 import { GET_ITEMS } from "@/graphql/queries";
@@ -198,10 +186,8 @@ export function useItems(): UseItemsResult {
 def _render_generated_files(generated: dict[str, str]) -> str:
     """Render every file written so far this run.
 
-    Injecting all of them is a deliberate simplification, not a general
-    solution: it is affordable because these apps are a dozen small files. A
-    larger spec would need the coder to select the files a task actually
-    depends on rather than reading the whole manifest every call.
+    Injecting all of them is a deliberate simplification that grows
+    quadratically; it is affordable only at a dozen small files.
     """
     if not generated:
         return "Nothing has been generated yet; this is the first file."
@@ -294,9 +280,8 @@ Return ONLY the raw code for the file, with no markdown code fences and no prose
 def red_check_node(state: AgentState) -> dict:
     """Run the suite once the tests exist but before any code satisfies them.
 
-    A test-first workflow is only real if the tests actually fail first. Tests
-    that pass here are testing nothing, and that is worth surfacing rather than
-    discovering later when everything is green for the wrong reason.
+    Tests that pass here assert nothing, which is worth surfacing now rather
+    than when everything is green for the wrong reason.
     """
     target_dir = state["target_dir"]
     updates: dict = {"red_checked": True}
@@ -312,8 +297,7 @@ def red_check_node(state: AgentState) -> dict:
 
 
 def validator_node(state: AgentState) -> dict:
-    # A freshly copied output tree has no node_modules. Install once, then let
-    # the retry loop reuse it rather than reinstalling on every cycle.
+    # Install once; the retry loop reuses it rather than reinstalling each cycle.
     if not state["installed"]:
         installed, output = run_npm_install(state["target_dir"])
         if not installed:
@@ -336,8 +320,7 @@ def validator_node(state: AgentState) -> dict:
 # Paths as tsc and vitest report them, e.g. "src/components/CarCard.tsx(9,57)".
 ERROR_PATH_RE = re.compile(r"((?:src|tests)/[\w./-]+\.(?:tsx?|jsx?))")
 
-# Bound on how many implicated files to open, so a cascade of errors across the
-# whole tree cannot blow up the prompt.
+# Bound the prompt: a cascade of errors must not open the whole tree.
 MAX_IMPLICATED_FILES = 6
 
 
@@ -404,7 +387,6 @@ the right fix. Never weaken an assertion that is failing for a real reason."""
     fix = raw_result["parsed"]
     in_tok, out_tok = _usage(raw_result["raw"])
 
-    # The model chooses this path, so treat it as untrusted before writing.
     patched = None
     if fix is not None and resolve_project_path(target_dir, fix.filepath) is not None:
         write_project_file(target_dir, fix.filepath, fix.corrected_content)

@@ -16,9 +16,8 @@ from nodes import (
 def _is_transient(exc: BaseException) -> bool:
     """Retry overload, rate limiting and network faults; fail fast on real bugs.
 
-    Deliberately narrower than LangGraph's default predicate, which retries any
-    exception it does not recognise — that turns a genuine bug into five slow
-    identical failures.
+    Narrower than LangGraph's default, which retries anything it does not
+    recognise and so turns one genuine bug into five slow identical failures.
     """
     if isinstance(exc, (APIConnectionError, APITimeoutError)):
         return True
@@ -27,10 +26,8 @@ def _is_transient(exc: BaseException) -> bool:
     return False
 
 
-# A run makes one sequential LLM call per planned file, so it stays exposed to
-# transient API failures for many minutes. A single 529 aborted a 12-task run at
-# task 9 and discarded every file generated up to that point; backing off and
-# retrying the node is far cheaper than repeating the run.
+# One sequential LLM call per planned file, over many minutes: a single 529 once
+# aborted a 12-task run at task 9 and discarded every file it had generated.
 LLM_RETRY = RetryPolicy(
     max_attempts=5,
     initial_interval=2.0,
@@ -45,7 +42,6 @@ def route_coding(state: AgentState) -> str:
     plan = state["plan"]
     if idx >= len(plan):
         return "validator"
-    # Crossing from tests into the code that satisfies them: prove they fail first.
     if not state["red_checked"] and plan[idx].phase == "implementation":
         return "red_check"
     return "coder"

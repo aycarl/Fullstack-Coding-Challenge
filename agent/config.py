@@ -1,12 +1,8 @@
 import os
 
-# Model used by every node in the pipeline. Override with ANTHROPIC_MODEL to run
-# against a different or cheaper model without touching node code.
 MODEL_ID = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
 
-# Published rates for the default model, in USD per million tokens. Input and
-# output are priced asymmetrically, so they must be counted separately — a single
-# combined token total cannot produce a cost.
+# USD per million tokens; input and output are priced asymmetrically.
 INPUT_COST_PER_MTOK = float(os.getenv("ANTHROPIC_INPUT_COST_PER_MTOK", "5.00"))
 OUTPUT_COST_PER_MTOK = float(os.getenv("ANTHROPIC_OUTPUT_COST_PER_MTOK", "25.00"))
 

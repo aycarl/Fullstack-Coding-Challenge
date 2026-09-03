@@ -39,7 +39,6 @@ def main():
     try:
         log.section("Agentic Code Generation Pipeline")
 
-        # 1. Clone boilerplate into target output
         if dst == src or dst == Path.cwd().resolve():
             raise SystemExit(f"refusing to delete {dst}")
 
@@ -50,6 +49,8 @@ def main():
             src, dst,
             ignore=shutil.ignore_patterns(
                 "node_modules", ".git", "agent", dst.name, "dist", ".env",
+                # Repo-level files that are not part of the app being generated.
+                "Makefile", "docs", "README.md", "CHALLENGE.md", ".gitignore",
             ),
         )
         log.event(f"[green]OK[/green] Boilerplate prepared in [bold]{args.output}[/bold]")
@@ -86,9 +87,8 @@ def main():
 def _next_label(node_name, plan, idx, red_checked) -> str:
     """What the agent is about to do next.
 
-    `app.stream` only yields once a node has finished, so the spinner has to
-    describe the step ahead — otherwise it reports work already done and sits
-    silent through the call that is actually running.
+    `app.stream` only yields once a node has finished, so the label must
+    describe the step ahead rather than the one just completed.
     """
     if node_name == "validator":
         return "Diagnosing the failure and patching the file it names"
@@ -97,7 +97,6 @@ def _next_label(node_name, plan, idx, red_checked) -> str:
     if node_name == "inspector":
         return "Planning: decomposing the spec into ordered tasks"
     if idx >= len(plan):
-        # The first validation also installs node_modules into a fresh tree.
         return "Installing dependencies, then typecheck and tests (~1 min)"
     task = plan[idx]
     if not red_checked and task.phase == "implementation":
@@ -120,7 +119,6 @@ def _stream_run(app, initial_state, log, output: str) -> bool:
                 for key in usage:
                     if key in state_update:
                         usage[key] = state_update[key]
-                # Cost of just this step, from the running totals the nodes return.
                 step_in = usage["input_tokens"] - seen["input_tokens"]
                 step_out = usage["output_tokens"] - seen["output_tokens"]
                 seen = dict(usage)

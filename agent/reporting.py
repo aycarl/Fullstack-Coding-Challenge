@@ -1,12 +1,7 @@
-"""Run logging: one stream of events, two destinations.
+"""Run logging: every console event is also appended to a file under `agent/logs/`.
 
-Everything the CLI prints is also appended to a timestamped file under
-`agent/logs/`, flushed as it happens rather than assembled at the end — a run
-that dies at task 9 should still leave a record of the first eight, which is
-exactly the case where the log is worth having.
-
-The console copy is styled and scannable; the file copy carries the full task
-descriptions, so it stands alone as a record of what the agent decided to do.
+Flushed per event, so a run that dies at task 9 still leaves a record of the
+first eight.
 """
 
 import re
@@ -15,9 +10,7 @@ from pathlib import Path
 
 from rich.text import Text
 
-# Fallback for stripping console markup if Rich cannot parse a line. Rich is the
-# authority here; this only exists so a malformed style can never take the file
-# copy down with it.
+# Fallback for stripping console markup if Rich cannot parse a line.
 _MARKUP_RE = re.compile(r"\[/?[a-z][a-z0-9 _#]*\]")
 
 RULE_WIDTH = 78
@@ -75,14 +68,11 @@ class RunLog:
     def plan(self, tasks, feature_order) -> None:
         """Render the plan grouped by feature, numbered by execution order.
 
-        Tasks execute phase-major (every test before any implementation), so the
-        step numbers deliberately run out of order within a feature. That is the
-        point: the reader sees both the feature the file serves and when it is
-        actually built.
+        Execution is phase-major, so step numbers deliberately run out of order
+        within a feature.
         """
         step = {id(task): i + 1 for i, task in enumerate(tasks)}
-        # Any label the planner introduced after the run started, plus a guard
-        # for a feature that somehow never made the order list.
+        # Guard for a feature that never made the order list.
         ordered = list(feature_order) + [
             t.feature for t in tasks if t.feature not in feature_order
         ]
@@ -103,8 +93,7 @@ class RunLog:
                     f"    [dim]{step[id(task)]:>2}.[/dim] {task.filepath} "
                     f"[dim]({task.phase})[/dim]"
                 )
-                # The description is the actual decomposition; it belongs in the
-                # artifact even though it is too long for the console.
+                # Too long for the console, but it is the actual decomposition.
                 self._write(f"        {task.description}")
         self.note("")
 
