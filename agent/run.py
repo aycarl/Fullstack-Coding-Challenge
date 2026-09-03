@@ -74,6 +74,8 @@ def main():
             "generated_files": {},
             "installed": False,
             "last_patched_file": None,
+            "last_failure_signature": None,
+            "unhelpful_fixes": [],
             "red_checked": False,
             "red_is_failing": False,
             "red_output": None

@@ -62,6 +62,11 @@ class AgentState(TypedDict):
     # npm install succeeded once; the retry loop must not repeat it every cycle.
     installed: bool
     last_patched_file: Optional[str]
+    # Fingerprint of the last failing validation, so the next one can tell
+    # whether the fix in between changed anything at all.
+    last_failure_signature: Optional[str]
+    # Files the fixer rewrote without moving the failure; not worth a second go.
+    unhelpful_fixes: List[str]
     # Result of running the suite after the tests exist but before any code does.
     red_checked: bool
     red_is_failing: bool

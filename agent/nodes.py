@@ -309,16 +309,39 @@ def validator_node(state: AgentState) -> dict:
             }
 
     passed, output = run_validation_suite(state["target_dir"])
-    return {
+    updates = {
         "is_passing": passed,
         "validation_output": output,
         "retries": state["retries"] + (0 if passed else 1),
         "installed": True,
     }
+    if not passed:
+        signature = _failure_signature(output)
+        patched = state["last_patched_file"]
+        # An identical failure means the file rewritten in between was not the
+        # cause. Stop the fixer spending the rest of a two-attempt budget on it.
+        if patched and signature == state["last_failure_signature"]:
+            updates["unhelpful_fixes"] = [*state["unhelpful_fixes"], patched]
+        updates["last_failure_signature"] = signature
+    return updates
 
 
 # Paths as tsc and vitest report them, e.g. "src/components/CarCard.tsx(9,57)".
 ERROR_PATH_RE = re.compile(r"((?:src|tests)/[\w./-]+\.(?:tsx?|jsx?))")
+
+# TypeScript diagnostic codes, e.g. TS2339.
+TS_CODE_RE = re.compile(r"\bTS\d{4,5}\b")
+
+
+def _failure_signature(output: str) -> str:
+    """What failed, with run-to-run noise like timings removed.
+
+    Two validations sharing a signature failed the same way, so whatever the
+    fixer rewrote in between did not help.
+    """
+    paths = sorted(set(ERROR_PATH_RE.findall(output)))
+    codes = sorted(set(TS_CODE_RE.findall(output)))
+    return "|".join(paths) + "#" + "|".join(codes)
 
 # Bound the prompt: a cascade of errors must not open the whole tree.
 MAX_IMPLICATED_FILES = 6
@@ -336,9 +359,28 @@ def _implicated_files(validation_output: str, target_dir: str) -> dict[str, str]
     return found
 
 
+def _writable_targets(
+    implicated: dict[str, str], unhelpful: list[str]
+) -> tuple[list[str], list[str]]:
+    """Split implicated files into ones worth rewriting and ones already tried.
+
+    Rewriting a file that a previous cycle already rewrote without moving the
+    error just repeats it, and the repair budget is two attempts. Exhausted
+    files stay in the prompt as context — the cause may be visible in them —
+    but are no longer offered as the write target. If every candidate is
+    exhausted, all are offered back rather than leaving the fixer no target.
+    """
+    blocked = set(unhelpful)
+    exhausted = [p for p in implicated if p in blocked]
+    targets = [p for p in implicated if p not in blocked]
+    return (targets or list(implicated)), exhausted
+
+
 def fixer_node(state: AgentState) -> dict:
     target_dir = state["target_dir"]
     implicated = _implicated_files(state["validation_output"], target_dir)
+
+    targets, exhausted = _writable_targets(implicated, state["unhelpful_fixes"])
 
     if implicated:
         files_block = "\n\n".join(
@@ -346,8 +388,15 @@ def fixer_node(state: AgentState) -> dict:
         )
         scope = (
             "Rewrite exactly one of the files listed above. Its `filepath` must be "
-            "one of: " + ", ".join(implicated)
+            "one of: " + ", ".join(targets)
         )
+        if exhausted:
+            scope += (
+                "\n\nAlready rewritten this run without changing the error: "
+                + ", ".join(exhausted)
+                + ". Editing one of those again will not help. The cause is "
+                "elsewhere, so look at what the other files expect of it."
+            )
     else:
         files_block = "No source file could be identified from the error output."
         scope = "Name the relative path of the file that must change."

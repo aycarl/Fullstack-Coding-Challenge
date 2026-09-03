@@ -4,7 +4,7 @@ import pytest
 
 import config
 from config import estimate_cost
-from nodes import MAX_IMPLICATED_FILES, _implicated_files, _usage
+from nodes import MAX_IMPLICATED_FILES, _failure_signature, _implicated_files, _usage
 from run import _next_label
 from tools import write_project_file
 
@@ -81,3 +81,25 @@ class TestNextLabel:
         """A crash in the progress line would take down a paid run."""
         assert _next_label("coder", [task()], 99, True)
         assert _next_label("coder", [], 0, False)
+
+
+class TestFailureSignature:
+    """Whether a repair helped, judged without run-to-run noise."""
+
+    def test_identical_failures_share_a_signature(self):
+        a = "src/a.ts(9,5): error TS2339: x\n Duration 3.26s"
+        b = "src/a.ts(9,5): error TS2339: x\n Duration 4.91s"
+        assert _failure_signature(a) == _failure_signature(b)
+
+    def test_a_different_file_changes_the_signature(self):
+        assert _failure_signature("src/a.ts(1,1): error TS2339") != \
+               _failure_signature("src/b.ts(1,1): error TS2339")
+
+    def test_a_different_error_code_changes_the_signature(self):
+        """Same file, new code means the last fix did move something."""
+        assert _failure_signature("src/a.ts(1,1): error TS2339") != \
+               _failure_signature("src/a.ts(1,1): error TS2739")
+
+    def test_fewer_failing_files_changes_the_signature(self):
+        two = "src/a.ts(1,1): error TS1234\nsrc/b.ts(1,1): error TS1234"
+        assert _failure_signature(two) != _failure_signature("src/a.ts(1,1): error TS1234")
