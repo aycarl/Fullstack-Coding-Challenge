@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from nodes import PHASE_ORDER
+from nodes import PHASE_ORDER, _coder_content
 from state import AgentPlan, FileTask, FixResult
 
 
@@ -60,3 +60,65 @@ class TestFixResult:
     def test_requires_both_a_path_and_full_contents(self):
         with pytest.raises(ValidationError):
             FixResult(filepath="src/a.ts")
+
+
+class TestCoderContentIsCacheable:
+    """Caching is a prefix match, so block order is load-bearing."""
+
+    def _content(self, generated, task):
+        return _coder_content("CONTRACTS", generated, task, "guidance", "existing")
+
+    def test_stable_first_volatile_last(self, task):
+        blocks = self._content({}, task(filepath="src/a.ts"))
+        assert "CONTRACTS" in blocks[0]["text"]
+        assert "Files already generated" in blocks[1]["text"]
+        assert "src/a.ts" in blocks[-1]["text"]
+
+    def test_only_the_reusable_blocks_are_marked(self, task):
+        blocks = self._content({}, task())
+        assert "cache_control" in blocks[0]
+        assert "cache_control" not in blocks[-1], "the task block differs every call"
+
+    def test_the_task_never_leaks_into_the_cached_prefix(self, task):
+        """A filepath in block 0 or 1 would break the prefix on every call."""
+        blocks = self._content({}, task(filepath="src/unique-name.ts"))
+        for block in blocks[:-1]:
+            assert "unique-name" not in block["text"]
+
+    def test_the_stable_block_is_identical_across_tasks(self, task):
+        a = self._content({}, task(filepath="src/a.ts"))[0]["text"]
+        b = self._content({"src/a.ts": "x"}, task(filepath="src/b.ts"))[0]["text"]
+        assert a == b
+
+    def test_the_newest_file_is_split_into_its_own_block(self, task):
+        blocks = self._content({"src/a.ts": "aaa", "src/b.ts": "bbb"}, task())
+        assert "aaa" in blocks[1]["text"] and "bbb" not in blocks[1]["text"]
+        assert "bbb" in blocks[2]["text"]
+
+    def test_this_calls_settled_block_matches_the_last_calls_whole_manifest(self, task):
+        """The property the whole split exists for.
+
+        A cache entry is reused only when its boundary lands on a breakpoint in
+        the next request. Call N's settled block must therefore be byte-identical
+        to call N-1's two manifest blocks joined — separator included.
+        """
+        prev = self._content({"a.ts": "1", "b.ts": "2"}, task())
+        curr = self._content({"a.ts": "1", "b.ts": "2", "c.ts": "3"}, task())
+        prev_manifest = prev[1]["text"] + prev[2]["text"]
+        assert curr[1]["text"] == prev_manifest
+
+    def test_the_split_holds_from_the_second_file_onward(self, task):
+        """The one-file case has no settled portion to carry forward."""
+        prev = self._content({"a.ts": "1"}, task())
+        curr = self._content({"a.ts": "1", "b.ts": "2"}, task())
+        assert curr[1]["text"] == prev[1]["text"]
+
+    def test_every_manifest_block_is_marked_reusable(self, task):
+        blocks = self._content({"a.ts": "1", "b.ts": "2"}, task())
+        assert all("cache_control" in b for b in blocks[1:-1])
+
+    def test_at_most_four_breakpoints(self, task):
+        """The API rejects a fifth."""
+        many = {f"f{i}.ts": str(i) for i in range(12)}
+        blocks = self._content(many, task())
+        assert sum("cache_control" in b for b in blocks) <= 4

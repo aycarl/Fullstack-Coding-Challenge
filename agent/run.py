@@ -77,6 +77,8 @@ def _generate(args, src: Path, dst: Path, log) -> None:
         "max_retries": 3,
         "input_tokens": 0,
         "output_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
         "generated_files": {},
         "installed": False,
         "last_patched_file": None,
@@ -112,7 +114,8 @@ def _next_label(node_name, plan, idx, red_checked) -> str:
 
 def _stream_run(app, initial_state, log, output: str) -> bool:
     """Drive the graph, reporting each node as it lands. Returns pass/fail."""
-    usage = {"input_tokens": 0, "output_tokens": 0}
+    usage = {"input_tokens": 0, "output_tokens": 0,
+             "cache_write_tokens": 0, "cache_read_tokens": 0}
     seen = dict(usage)
     plan: list = []
     idx = 0
@@ -125,11 +128,16 @@ def _stream_run(app, initial_state, log, output: str) -> bool:
                 for key in usage:
                     if key in state_update:
                         usage[key] = state_update[key]
-                step_in = usage["input_tokens"] - seen["input_tokens"]
+                step_in = sum(
+                    usage[k] - seen[k]
+                    for k in ("input_tokens", "cache_write_tokens", "cache_read_tokens")
+                )
+                step_cached = usage["cache_read_tokens"] - seen["cache_read_tokens"]
                 step_out = usage["output_tokens"] - seen["output_tokens"]
                 seen = dict(usage)
+                cached_note = f", {step_cached:,} cached" if step_cached else ""
                 spend = (
-                    f" [dim]({step_in:,} in / {step_out:,} out)[/dim]"
+                    f" [dim]({step_in:,} in{cached_note} / {step_out:,} out)[/dim]"
                     if step_in or step_out
                     else ""
                 )
@@ -166,12 +174,22 @@ def _stream_run(app, initial_state, log, output: str) -> bool:
                 status.update(f"[bold]{_next_label(node_name, plan, idx, red_checked)}")
 
     log.section("Execution Complete")
-    cost = estimate_cost(usage["input_tokens"], usage["output_tokens"])
+    cost = estimate_cost(
+        usage["input_tokens"], usage["output_tokens"],
+        usage["cache_write_tokens"], usage["cache_read_tokens"],
+    )
+    total_in = usage["input_tokens"] + usage["cache_write_tokens"] + usage["cache_read_tokens"]
+    reused = usage["cache_read_tokens"] / total_in * 100 if total_in else 0
     log.note(f"Validation: {'[green]passing[/green]' if passing else '[red]failing[/red]'}")
     log.note(
         f"Tokens ({MODEL_ID}): "
-        f"[bold]{usage['input_tokens']:,}[/bold] in, "
+        f"[bold]{total_in:,}[/bold] in, "
         f"[bold]{usage['output_tokens']:,}[/bold] out"
+    )
+    log.note(
+        f"Cache: [bold]{usage['cache_read_tokens']:,}[/bold] read "
+        f"([bold]{reused:.0f}%[/bold] of input reused), "
+        f"{usage['cache_write_tokens']:,} written"
     )
     log.note(f"Estimated cost: [bold]${cost:.2f}[/bold]")
     log.note(f"Run output: [bold]{output}[/bold]")

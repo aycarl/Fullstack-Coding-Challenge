@@ -42,10 +42,27 @@ IGNORED_DIRS = {"node_modules", ".git", "dist", ".vite", "coverage", "docs"}
 PHASE_ORDER = {"scaffold": 0, "test": 1, "implementation": 2}
 
 
-def _usage(message) -> tuple[int, int]:
-    """Input and output tokens for one call; the two are priced differently."""
+def _usage(message) -> tuple[int, int, int, int]:
+    """Uncached input, cache writes, cache reads and output for one call.
+
+    Taken from the raw Anthropic usage rather than LangChain's rollup, which
+    folds cached tokens into `input_tokens` and reports `cache_creation` as
+    zero — pricing off that would bill every cache read at the full input rate.
+    """
+    raw = (getattr(message, "response_metadata", None) or {}).get("usage") or {}
+    if raw:
+        return (
+            raw.get("input_tokens", 0),
+            raw.get("cache_creation_input_tokens", 0),
+            raw.get("cache_read_input_tokens", 0),
+            raw.get("output_tokens", 0),
+        )
     meta = getattr(message, "usage_metadata", None) or {}
-    return meta.get("input_tokens", 0), meta.get("output_tokens", 0)
+    return meta.get("input_tokens", 0), 0, 0, meta.get("output_tokens", 0)
+
+
+# Marks the end of a stretch the next call can reuse verbatim.
+CACHEABLE = {"cache_control": {"type": "ephemeral"}}
 
 
 def inspector_node(state: AgentState) -> dict:
@@ -153,13 +170,15 @@ Output ONLY the structured plan."""
     # test-first. The sort is stable, so order within a phase is preserved.
     tasks = sorted(plan_result.tasks, key=lambda t: PHASE_ORDER.get(t.phase, 2))
 
-    in_tok, out_tok = _usage(result["raw"])
+    in_tok, cw, cr, out_tok = _usage(result["raw"])
     return {
         "plan": tasks,
         "feature_order": feature_order,
         "current_task_index": 0,
         "input_tokens": state["input_tokens"] + in_tok,
         "output_tokens": state["output_tokens"] + out_tok,
+        "cache_write_tokens": state["cache_write_tokens"] + cw,
+        "cache_read_tokens": state["cache_read_tokens"] + cr,
     }
 
 
@@ -183,6 +202,40 @@ export function useItems(): UseItemsResult {
 """
 
 
+MANIFEST_HEADER = "Files already generated during this run:\n"
+
+
+def _manifest_blocks(generated: dict[str, str]) -> list[dict]:
+    """The generated-file manifest, split so its cached prefix keeps matching.
+
+    A cache entry is only reused when its boundary falls on a breakpoint in the
+    next request. The manifest grows by one file per call, so a single moving
+    breakpoint never lines up with what the previous call wrote — it is rewritten
+    every time and never read. Splitting the newest file into its own block puts
+    this call's second boundary exactly where the last call's third one was, so
+    reuse accrues as the run goes on.
+
+    The separator lives at the head of the newest block, so the two blocks
+    concatenate to precisely what the next call sends as one settled block.
+    """
+    if not generated:
+        return [{"type": "text", "text": MANIFEST_HEADER + "Nothing yet; this is the first file."}]
+
+    items = list(generated.items())
+    settled, newest = items[:-1], items[-1:]
+    if not settled:
+        return [{"type": "text", "text": MANIFEST_HEADER + _render_files(newest), **CACHEABLE}]
+    return [
+        {"type": "text", "text": MANIFEST_HEADER + _render_files(settled), **CACHEABLE},
+        {"type": "text", "text": "\n\n" + _render_files(newest), **CACHEABLE},
+    ]
+
+
+def _render_files(items) -> str:
+    """One rendered block per file, in generation order."""
+    return "\n\n".join(f"--- File: {path} ---\n{content}" for path, content in items)
+
+
 def _render_generated_files(generated: dict[str, str]) -> str:
     """Render every file written so far this run.
 
@@ -194,6 +247,46 @@ def _render_generated_files(generated: dict[str, str]) -> str:
     return "\n\n".join(
         f"--- File: {path} ---\n{content}" for path, content in generated.items()
     )
+
+
+def _coder_content(
+    boilerplate_context: str, generated: dict[str, str], task, phase_guidance: str,
+    existing_content: str,
+) -> list[dict]:
+    """The coder message, ordered so its prefix can be reused between calls.
+
+    Caching is a prefix match, so this is built stable-first: the boilerplate
+    contracts never change during a run, and the manifest only ever grows at the
+    end. Everything specific to one task goes after the last breakpoint — put it
+    first and the prefix differs on every call, so nothing is ever reused.
+    """
+    contracts = f"""Pre-existing project context:
+{boilerplate_context}
+
+{HOOK_EXAMPLE}"""
+
+    task_block = f"""You are generating application code for: {task.filepath}
+Task purpose: {task.description}
+Phase: {task.phase}. {phase_guidance}
+
+Existing content of the file you are writing (if any):
+{existing_content}
+
+Write the full, complete production code for this file.
+
+Import only symbols that actually exist. The files above are the real source of
+truth for what is importable: match each import to the way that file actually
+exports it — a default export must be imported as a default, a named export by
+name — and match prop and return types to the signatures those files declare.
+Do not import from a path that is not listed above.
+
+Return ONLY the raw code for the file, with no markdown code fences and no prose."""
+
+    return [
+        {"type": "text", "text": contracts, **CACHEABLE},
+        *_manifest_blocks(generated),
+        {"type": "text", "text": task_block},
+    ]
 
 
 def coder_node(state: AgentState) -> dict:
@@ -228,37 +321,16 @@ def coder_node(state: AgentState) -> dict:
             "API documents only; implement no behaviour here."
         )
 
-    prompt = f"""You are generating application code for: {task.filepath}
-Task purpose: {task.description}
-Phase: {task.phase}. {phase_guidance}
-
-Pre-existing project context:
-{state['boilerplate_context']}
-
-Files already generated during this run:
-{_render_generated_files(generated)}
-
-Existing content of the file you are writing (if any):
-{existing_content}
-
-{HOOK_EXAMPLE}
-
-Write the full, complete production code for this file.
-
-Import only symbols that actually exist. The files above are the real source of
-truth for what is importable: match each import to the way that file actually
-exports it — a default export must be imported as a default, a named export by
-name — and match prop and return types to the signatures those files declare.
-Do not import from a path that is not listed above.
-
-Return ONLY the raw code for the file, with no markdown code fences and no prose."""
+    content = _coder_content(
+        state["boilerplate_context"], generated, task, phase_guidance, existing_content
+    )
 
     response = llm.invoke(
         [
             SystemMessage(
                 content="You are an expert React 19 + TypeScript + Apollo Client developer."
             ),
-            HumanMessage(content=prompt),
+            HumanMessage(content=content),
         ]
     )
 
@@ -268,11 +340,13 @@ Return ONLY the raw code for the file, with no markdown code fences and no prose
 
     write_project_file(state["target_dir"], task.filepath, clean_code)
 
-    in_tok, out_tok = _usage(response)
+    in_tok, cw, cr, out_tok = _usage(response)
     return {
         "current_task_index": idx + 1,
         "input_tokens": state["input_tokens"] + in_tok,
         "output_tokens": state["output_tokens"] + out_tok,
+        "cache_write_tokens": state["cache_write_tokens"] + cw,
+        "cache_read_tokens": state["cache_read_tokens"] + cr,
         "generated_files": {**generated, task.filepath: clean_code},
     }
 
@@ -434,7 +508,7 @@ the right fix. Never weaken an assertion that is failing for a real reason."""
         ]
     )
     fix = raw_result["parsed"]
-    in_tok, out_tok = _usage(raw_result["raw"])
+    in_tok, cw, cr, out_tok = _usage(raw_result["raw"])
 
     patched = None
     if fix is not None and resolve_project_path(target_dir, fix.filepath) is not None:
@@ -444,5 +518,7 @@ the right fix. Never weaken an assertion that is failing for a real reason."""
     return {
         "input_tokens": state["input_tokens"] + in_tok,
         "output_tokens": state["output_tokens"] + out_tok,
+        "cache_write_tokens": state["cache_write_tokens"] + cw,
+        "cache_read_tokens": state["cache_read_tokens"] + cr,
         "last_patched_file": patched,
     }

@@ -59,6 +59,9 @@ class AgentState(TypedDict):
     max_retries: int
     input_tokens: int
     output_tokens: int
+    # Cached prefix reuse, tracked separately because it is priced differently.
+    cache_write_tokens: int
+    cache_read_tokens: int
     # npm install succeeded once; the retry loop must not repeat it every cycle.
     installed: bool
     last_patched_file: Optional[str]

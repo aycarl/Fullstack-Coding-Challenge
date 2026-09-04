@@ -22,16 +22,54 @@ class TestEstimateCost:
     def test_a_run_that_made_no_calls_costs_nothing(self):
         assert estimate_cost(0, 0) == 0
 
+    def test_a_cache_read_costs_a_tenth_of_fresh_input(self):
+        """Billing reads at the input rate would overstate a cached run's cost
+        by most of its input."""
+        assert estimate_cost(0, 0, cache_read_tokens=1_000_000) == pytest.approx(
+            config.INPUT_COST_PER_MTOK * config.CACHE_READ_MULTIPLIER
+        )
+
+    def test_a_cache_write_costs_more_than_fresh_input(self):
+        assert estimate_cost(0, 0, cache_write_tokens=1_000_000) == pytest.approx(
+            config.INPUT_COST_PER_MTOK * config.CACHE_WRITE_MULTIPLIER
+        )
+
+    def test_reusing_a_prefix_is_cheaper_than_resending_it(self):
+        """The whole point of the reorder."""
+        uncached = estimate_cost(100_000, 5_000)
+        cached = estimate_cost(10_000, 5_000, cache_write_tokens=0, cache_read_tokens=90_000)
+        assert cached < uncached
+
+
+def _msg(raw=None, rollup=None):
+    return type("M", (), {
+        "response_metadata": {"usage": raw} if raw is not None else {},
+        "usage_metadata": rollup,
+    })()
+
 
 class TestUsage:
-    def test_reads_both_counts(self):
-        msg = type("M", (), {"usage_metadata": {"input_tokens": 10, "output_tokens": 3}})()
-        assert _usage(msg) == (10, 3)
+    def test_reads_the_raw_four_way_split(self):
+        raw = {"input_tokens": 8, "cache_creation_input_tokens": 2008,
+               "cache_read_input_tokens": 0, "output_tokens": 5}
+        assert _usage(_msg(raw)) == (8, 2008, 0, 5)
+
+    def test_prefers_raw_usage_over_langchain_rollup(self):
+        """The rollup folds cached tokens into input_tokens and reports
+        cache_creation as 0 — billing off it would charge reads at full rate."""
+        raw = {"input_tokens": 7, "cache_creation_input_tokens": 0,
+               "cache_read_input_tokens": 2008, "output_tokens": 4}
+        rollup = {"input_tokens": 2015, "output_tokens": 4,
+                  "input_token_details": {"cache_read": 2008, "cache_creation": 0}}
+        assert _usage(_msg(raw, rollup)) == (7, 0, 2008, 4)
+
+    def test_falls_back_to_the_rollup_when_raw_is_absent(self):
+        assert _usage(_msg(rollup={"input_tokens": 10, "output_tokens": 3})) == (10, 0, 0, 3)
 
     def test_missing_metadata_does_not_break_the_run(self):
         """Losing a token count must never abort generation."""
-        assert _usage(object()) == (0, 0)
-        assert _usage(type("M", (), {"usage_metadata": None})()) == (0, 0)
+        assert _usage(object()) == (0, 0, 0, 0)
+        assert _usage(_msg(rollup=None)) == (0, 0, 0, 0)
 
 
 class TestImplicatedFiles:
