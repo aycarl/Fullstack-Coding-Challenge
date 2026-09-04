@@ -218,6 +218,18 @@ Both specs produced suites that pass in full. Neither output mentions the other'
 
 ---
 
+## A note on scope
+
+The brief suggests 4 to 6 hours. The core agent took about five. By the end of the first
+session it planned, generated, validated and repaired, and reported its own cost.
+
+I chose to spend a second session extending it. That added test-first generation with a
+red-phase check, the agent's own test suite, run logging, prompt caching, and a second spec
+to prove generalization. These were deliberate additions rather than scope I failed to
+control. Everything up to commit `c81c741` is the first session, and it stands on its own.
+
+---
+
 ## Repository
 
 ```
